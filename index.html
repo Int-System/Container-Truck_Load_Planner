@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Container &amp; Truck Load Planner</title>
+<meta name="description" content="วางแผนจัดเรียงสินค้าในตู้คอนเทนเนอร์และรถบรรทุก — Auto pack, Manual 3D, 2D views, reports">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css?v=4.1.7">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2563eb">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='14' width='56' height='36' rx='6' fill='%232563eb'/%3E%3Cpath d='M16 14v36M28 14v36M40 14v36M52 14v36' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+<script>
+// Automated UI tests (e2e.html loads this page with ?e2e=1): use an in-memory localStorage so tests never
+// touch the user's saved work, and record every error so the test page can report it.
+if (/[?&]e2e=1/.test(location.search)) {
+  (function () {
+    var mem = {};
+    var store = {
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+      setItem: function (k, v) { mem[k] = String(v); },
+      removeItem: function (k) { delete mem[k]; },
+      clear: function () { mem = {}; },
+      key: function (i) { return Object.keys(mem)[i] || null; },
+      get length() { return Object.keys(mem).length; }
+    };
+    try { Object.defineProperty(window, 'localStorage', { value: store, configurable: true }); } catch (e) { /* ignore */ }
+    window.__e2e = true;
+    window.__errors = [];
+    window.addEventListener('error', function (e) { window.__errors.push(String(e.message || e)); });
+    window.addEventListener('unhandledrejection', function (e) { window.__errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
+    var ce = console.error;
+    console.error = function () { window.__errors.push([].slice.call(arguments).join(' ')); ce.apply(console, arguments); };
+  })();
+}
+try{var th=localStorage.getItem('lp.theme');if(th==='light'||th==='dark')document.documentElement.setAttribute('data-theme',th);}catch(e){}
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo"><i data-icon="container"></i></span>
+    <div class="brand-t"><b data-i18n="appTitle">Load Planner</b><span class="brand-s" data-i18n="appSub"></span></div>
+  </div>
+  <div class="proj-wrap"><i data-icon="edit"></i><input id="projName" class="proj" data-i18n-title="projectName" maxlength="80"></div>
+  <nav class="actions">
+    <div class="dd">
+      <button class="tb" id="btnFile"><i data-icon="folder"></i><span data-i18n="file">File</span><i data-icon="chevron" class="chev"></i></button>
+      <div class="dd-menu">
+        <button id="btnNew"><i data-icon="file"></i><span data-i18n="newProject"></span></button>
+        <label class="as-btn"><i data-icon="folder"></i><span data-i18n="open"></span><input type="file" id="openFile" accept=".json" hidden></label>
+        <button id="btnSave"><i data-icon="save"></i><span data-i18n="save"></span><kbd>Ctrl S</kbd></button>
+        <div class="dd-sep"></div>
+        <button id="btnTour"><i data-icon="play"></i><span data-i18n="tourMenu"></span></button>
+        <a class="as-btn" href="manual.html" target="_blank" rel="noopener"><i data-icon="help"></i><span data-i18n="manualMenu"></span><kbd>?</kbd></a>
+        <a class="as-btn" href="quickref.html" target="_blank" rel="noopener"><i data-icon="file"></i><span data-i18n="quickRefMenu"></span></a>
+      </div>
+    </div>
+    <div class="dd">
+      <button class="tb" id="btnSamples"><i data-icon="box"></i><span data-i18n="samples">Samples</span><i data-icon="chevron" class="chev"></i></button>
+      <div class="dd-menu wide" id="menuSamples"></div>
+    </div>
+    <div class="dd">
+      <button class="tb" id="btnExport"><i data-icon="download"></i><span data-i18n="export">Export</span><i data-icon="chevron" class="chev"></i></button>
+      <div class="dd-menu" id="menuExport">
+        <button data-exp="pdf"><i data-icon="file"></i><span data-i18n="exportPdf"></span></button>
+        <button data-exp="steps"><i data-icon="list"></i><span data-i18n="stepSheet"></span></button>
+        <button data-exp="dn"><i data-icon="truck"></i><span data-i18n="dnMenu"></span></button>
+        <button data-exp="xlsx"><i data-icon="grid"></i><span data-i18n="exportXlsx"></span></button>
+        <button data-exp="csv"><i data-icon="list"></i><span data-i18n="exportCsv"></span></button>
+        <button data-exp="cargo"><i data-icon="list"></i><span data-i18n="exportCargoCsv"></span></button>
+      </div>
+    </div>
+    <button class="tb accent" id="btnCompare"><i data-icon="chart"></i><span data-i18n="compare">Compare</span></button>
+    <span class="tb-sep"></span>
+    <button class="tb icon" id="btnHelp" data-i18n-title="help"><i data-icon="help"></i></button>
+    <button class="tb icon" id="btnTheme" data-i18n-title="theme"><i data-icon="auto"></i></button>
+    <button class="tb lang" id="btnLang">EN</button>
+  </nav>
+</header>
+
+<main class="layout">
+  <!-- ============ left: inputs ============ -->
+  <aside class="sidebar">
+    <div class="side-scroll">
+      <section class="step" id="stepContainer">
+        <header class="step-h" data-toggle><span class="num">1</span><span class="step-t" data-i18n="secContainer"></span><a class="hl" href="manual.html#container" target="_blank" rel="noopener" data-i18n-title="helpHere">?</a><span class="step-chip" id="chipContainer"></span><i data-icon="chevron" class="chev"></i></header>
+        <div class="step-b" id="containerPanel"></div>
+      </section>
+      <section class="step" id="stepCargo">
+        <header class="step-h" data-toggle><span class="num">2</span><span class="step-t" data-i18n="secCargo"></span><a class="hl" href="manual.html#cargo" target="_blank" rel="noopener" data-i18n-title="helpHere">?</a><span class="step-chip" id="chipCargo"></span><i data-icon="chevron" class="chev"></i></header>
+        <div class="step-b" id="cargoPanel"></div>
+      </section>
+      <section class="step" id="stepPack">
+        <header class="step-h" data-toggle><span class="num">3</span><span class="step-t" data-i18n="secPack"></span><a class="hl" href="manual.html#pack" target="_blank" rel="noopener" data-i18n-title="helpHere">?</a><i data-icon="chevron" class="chev"></i></header>
+        <div class="step-b">
+          <div class="obj-grid" id="objGrid">
+            <button data-obj="count"><i data-icon="count"></i><b data-i18n="objCount"></b><small data-i18n="objCountD"></small></button>
+            <button data-obj="volume"><i data-icon="cube"></i><b data-i18n="objVolume"></b><small data-i18n="objVolumeD"></small></button>
+            <button data-obj="balance"><i data-icon="scale"></i><b data-i18n="objBalance"></b><small data-i18n="objBalanceD"></small></button>
+            <button data-obj="delivery"><i data-icon="door"></i><b data-i18n="objDelivery"></b><small data-i18n="objDeliveryD"></small></button>
+          </div>
+          <details class="adv">
+            <summary><i data-icon="sliders"></i><span data-i18n="advanced"></span></summary>
+            <div class="grid2">
+              <label class="fld"><span data-i18n="minSupport"></span>
+                <select id="optSupport"><option value="1">100%</option><option value="0.9">90%</option><option value="0.75">75%</option><option value="0.6">60%</option></select></label>
+              <label class="fld"><span data-i18n="timeLimit"></span>
+                <select id="optTime"><option value="1000">1 s</option><option value="2500">2.5 s</option><option value="4500">4.5 s</option></select></label>
+            </div>
+            <label class="fld"><span data-i18n="segDistance"></span><div class="unit-in"><input type="number" id="optSeg" min="0" step="10"><em>cm</em></div></label>
+            <label class="switch"><input type="checkbox" id="optHeavy"><span class="sl"></span><span data-i18n="heavyBottom"></span></label>
+            <label class="switch" data-i18n-title="axleAwareHint"><input type="checkbox" id="optAxle"><span class="sl"></span><span data-i18n="axleAware"></span></label>
+            <label class="switch" data-i18n-title="lockedHint"><input type="checkbox" id="optLocked"><span class="sl"></span><span data-i18n="keepLocked"></span></label>
+          </details>
+        </div>
+      </section>
+    </div>
+    <div class="side-foot">
+      <div class="precheck" id="precheck"></div>
+      <div class="pack-row">
+        <button class="btn primary big grow" id="btnPack"><i data-icon="zap"></i><span class="lbl" data-i18n="autoPack">Auto Pack</span><span class="prog"><span></span></span></button>
+        <button class="btn icon-only" id="btnClearLayout" data-i18n-title="clearLayout"><i data-icon="trash"></i></button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ centre: viewer ============ -->
+  <section class="stage" id="stage">
+    <div class="viewer" id="viewer">
+      <div id="view3d" class="view3d"></div>
+      <div id="view2d" class="view2d hidden"></div>
+
+      <div class="ov ov-top">
+       <div class="grp">
+        <div class="seg glass" id="viewSeg">
+          <button data-view="3d"><i data-icon="cube"></i><span data-i18n="view3d"></span></button>
+          <button data-view="top"><i data-icon="top"></i><span data-i18n="viewTop"></span></button>
+          <button data-view="side"><i data-icon="side"></i><span data-i18n="viewSide"></span></button>
+          <button data-view="door"><i data-icon="front"></i><span data-i18n="viewDoor"></span></button>
+        </div>
+        <div class="seg glass" id="modeSeg">
+          <button data-mode="view"><i data-icon="eye"></i><span data-i18n="modeView"></span></button>
+          <button data-mode="manual"><i data-icon="hand"></i><span data-i18n="modeManual"></span></button>
+        </div>
+       </div>
+       <div class="grp">
+        <div class="glass bar">
+          <button class="ib" id="btnUndo" data-i18n-title="undo"><i data-icon="undo"></i></button>
+          <button class="ib" id="btnRedo" data-i18n-title="redo"><i data-icon="redo"></i></button>
+        </div>
+        <div class="glass bar only3d" id="camBar">
+          <button class="ib" data-cam="iso" data-i18n-title="camIso"><i data-icon="cube"></i></button>
+          <button class="ib" data-cam="door" data-i18n-title="camDoor"><i data-icon="front"></i></button>
+          <button class="ib" data-cam="side" data-i18n-title="camSide"><i data-icon="side"></i></button>
+          <button class="ib" data-cam="top" data-i18n-title="camTop"><i data-icon="top"></i></button>
+          <button class="ib" data-cam="cab" data-i18n-title="camCab"><i data-icon="truck"></i></button>
+        </div>
+        <div class="glass bar">
+          <div class="pop">
+            <button class="ib" id="btnDisplay" data-i18n-title="display"><i data-icon="sliders"></i></button>
+            <div class="pop-panel" id="displayPanel">
+              <div class="pop-h" data-i18n="display"></div>
+              <label class="switch only3d"><input type="checkbox" id="tVehicle"><span class="sl"></span><span data-i18n="showVehicle"></span></label>
+              <div class="brand-row only3d">
+                <label class="fld"><span data-i18n="cabColor"></span><input type="color" id="tCab" value="#f5f6f8"></label>
+                <div class="fld"><span data-i18n="cabLogo"></span>
+                  <div class="row" style="gap:6px"><label class="btn sm"><i data-icon="upload"></i><span data-i18n="upload"></span><input type="file" id="tLogo" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden></label>
+                  <button class="btn sm ghost" id="tLogoDel" data-i18n-title="delete"><i data-icon="trash"></i></button></div></div>
+              </div>
+              <label class="rng only3d"><span data-i18n="wallOpacity"></span><input type="range" id="tOpacity" min="0" max="0.8" step="0.02"></label>
+              <label class="rng"><span data-i18n="cut"></span><input type="range" id="tCut" min="0.02" max="1" step="0.01"></label>
+              <label class="fld"><span data-i18n="layer"></span><select id="tLayer"></select></label>
+              <div class="pop-h sm" data-i18n="skuFilter"></div>
+              <div class="chips" id="skuChips"></div>
+            </div>
+          </div>
+          <button class="ib" id="btnFull" data-i18n-title="fullscreen"><i data-icon="maximize"></i></button>
+        </div>
+       </div>
+      </div>
+
+      <!-- manual-mode toolbar -->
+      <div class="ov ov-tc hidden" id="manualTools">
+        <div class="glass bar manual">
+          <button class="ib" data-m="rotate" data-i18n-title="rotate"><i data-icon="rotate"></i></button>
+          <button class="ib" data-m="tip" data-i18n-title="tip"><i data-icon="flip"></i></button>
+          <button class="ib" data-m="raise" data-i18n-title="raise"><i data-icon="up"></i></button>
+          <button class="ib" data-m="lower" data-i18n-title="lower"><i data-icon="down"></i></button>
+          <span class="vsep"></span>
+          <button class="ib" data-m="copy" data-i18n-title="copy"><i data-icon="copy"></i></button>
+          <button class="ib" data-m="array" data-i18n-title="array"><i data-icon="grid"></i></button>
+          <button class="ib" data-m="lock" data-i18n-title="lock" id="btnLock"><i data-icon="lock"></i></button>
+          <button class="ib danger" data-m="delete" data-i18n-title="delete"><i data-icon="trash"></i></button>
+          <span class="vsep"></span>
+          <a class="ib hl-ib" href="manual.html#manual" target="_blank" rel="noopener" data-i18n-title="helpHere">?</a>
+          <div class="pop">
+            <button class="ib" id="btnSnap" data-i18n-title="snap"><i data-icon="magnet"></i></button>
+            <div class="pop-panel" id="snapPanel">
+              <div class="pop-h" data-i18n="snap"></div>
+              <label class="fld"><span data-i18n="snapGrid"></span><select id="mGrid"><option value="0">off</option><option value="1">1 cm</option><option value="5">5 cm</option><option value="10">10 cm</option><option value="25">25 cm</option></select></label>
+              <label class="switch"><input type="checkbox" id="mWalls"><span class="sl"></span><span data-i18n="snapWalls"></span></label>
+              <label class="switch"><input type="checkbox" id="mItems"><span class="sl"></span><span data-i18n="snapItems"></span></label>
+              <label class="switch"><input type="checkbox" id="mGravity"><span class="sl"></span><span data-i18n="gravity"></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ov ov-bl" id="selCard"></div>
+
+      <div class="ov ov-b">
+        <div class="glass bar player">
+          <button class="ib" id="tPlay" data-i18n-title="play"><i data-icon="play"></i></button>
+          <input type="range" id="tStep" min="0" max="0" step="1">
+          <span id="tStepLbl" class="step-lbl"></span>
+        </div>
+      </div>
+
+      <div class="empty-ov hidden" id="emptyOv"></div>
+      <div class="busy-ov hidden" id="busyOv"><div class="busy-card"><div class="spinner"></div><b data-i18n="packing"></b><span id="busyTxt"></span><div class="prog"><span></span></div><button class="btn sm" id="btnCancelPack" data-i18n="cancelPack"></button></div></div>
+      <div id="tip" class="tip hidden"></div>
+    </div>
+  </section>
+
+  <!-- ============ right: insights ============ -->
+  <aside class="insights">
+    <div class="tabs" id="insTabs">
+      <button data-tab="summary" class="on"><i data-icon="chart"></i><span data-i18n="summary"></span></button>
+      <button data-tab="steps"><i data-icon="list"></i><span data-i18n="loadingSeq"></span></button>
+      <button data-tab="multi"><i data-icon="stack"></i><span data-i18n="multiTab"></span><span class="tab-badge hidden" id="multiBadge"></span></button>
+      <a class="hl tabs-hl" id="insHelp" href="manual.html#results" target="_blank" rel="noopener" data-i18n-title="helpHere">?</a>
+    </div>
+    <div class="ins-body">
+      <div id="summary" class="tabpane"></div>
+      <div id="steps" class="tabpane hidden"></div>
+      <div id="multi" class="tabpane hidden"></div>
+    </div>
+  </aside>
+</main>
+<div id="toast" class="toast"></div>
+
+<!-- third-party (CDN): three.js r147 classic build + OrbitControls, SheetJS for Excel -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- engine (pure, framework-free; also runs in a Web Worker and in Node) -->
+<script src="src/engine/geometry.js?v=4.1.7"></script>
+<script src="src/engine/constraints.js?v=4.1.7"></script>
+<script src="src/engine/cog.js?v=4.1.7"></script>
+<script src="src/engine/packer.js?v=4.1.7"></script>
+<script src="src/engine/multi.js?v=4.1.7"></script>
+<script src="src/engine/index.js?v=4.1.7"></script>
+<!-- data / utils / state -->
+<script src="src/utils/units.js?v=4.1.7"></script>
+<script src="src/utils/i18n.js?v=4.1.7"></script>
+<script src="src/utils/icons.js?v=4.1.7"></script>
+<script src="src/utils/dom.js?v=4.1.7"></script>
+<script src="src/data/presets.js?v=4.1.7"></script>
+<script src="src/data/vehicles.js?v=4.1.7"></script>
+<script src="src/utils/io.js?v=4.1.7"></script>
+<script src="src/store.js?v=4.1.7"></script>
+<!-- components -->
+<script src="src/components/viewer2d.js?v=4.1.7"></script>
+<script src="src/components/vehicle3d.js?v=4.1.7"></script>
+<script src="src/components/viewer3d.js?v=4.1.7"></script>
+<script src="src/components/summary.js?v=4.1.7"></script>
+<script src="src/components/insights.js?v=4.1.7"></script>
+<script src="src/components/containerSelect.js?v=4.1.7"></script>
+<script src="src/components/cargoForm.js?v=4.1.7"></script>
+<script src="src/components/skuLibrary.js?v=4.1.7"></script>
+<script src="src/components/shipment.js?v=4.1.7"></script>
+<script src="src/components/checklist.js?v=4.1.7"></script>
+<script src="src/components/tour.js?v=4.1.7"></script>
+<script src="src/components/report.js?v=4.1.7"></script>
+<script src="src/app.js?v=4.1.7"></script>
+</body>
+</html>
