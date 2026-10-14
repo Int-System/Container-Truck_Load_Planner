@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Load Planner Tests</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#1c2330; --ok:#15803d; --bad:#b91c1c; --muted:#64748b; --card:#fff; --line:#e2e8f0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f141b; --fg:#e6ebf2; --ok:#4ade80; --bad:#f87171; --muted:#94a3b8; --card:#161d27; --line:#263241; } }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, "Segoe UI", "Noto Sans Thai", sans-serif; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sum { color:var(--muted); margin-bottom:16px; }
+  .r { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0; }
+  .ok b { color:var(--ok); } .bad b { color:var(--bad); }
+  .note { color:var(--muted); font-size:13px; } .err { color:var(--bad); font-family:ui-monospace,Consolas,monospace; font-size:12px; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Engine unit tests</h1>
+<div class="sum" id="sum">Running…</div>
+<div id="out"></div>
+<script src="src/utils/units.js"></script>
+<script src="src/engine/geometry.js"></script>
+<script src="src/engine/constraints.js"></script>
+<script src="src/engine/cog.js"></script>
+<script src="src/engine/packer.js"></script>
+<script src="src/engine/multi.js"></script>
+<script src="src/engine/index.js"></script>
+<script src="src/engine/tests/engine.test.js"></script>
+<script>
+  setTimeout(function () {
+    var out = document.getElementById('out');
+    var s = LPTests.run(function (r) {
+      var d = document.createElement('div');
+      d.className = 'r ' + (r.ok ? 'ok' : 'bad');
+      d.innerHTML = '<b>' + (r.ok ? '✔' : '✘') + '</b> ' + r.name + ' <span class="note">(' + r.ms + ' ms)</span>' +
+        (r.note ? '<div class="note">' + r.note + '</div>' : '') + (r.error ? '<div class="err">' + r.error + '</div>' : '');
+      out.appendChild(d);
+    });
+    document.getElementById('sum').textContent = s.pass + ' passed, ' + s.fail + ' failed';
+    window.__testSummary = s;
+  }, 50);
+</script>
+</body>
+</html>

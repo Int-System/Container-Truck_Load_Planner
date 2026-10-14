@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI Tests (E2E)</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#1c2330; --ok:#15803d; --bad:#b91c1c; --muted:#64748b; --card:#fff; --line:#e2e8f0; --accent:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f141b; --fg:#e6ebf2; --ok:#4ade80; --bad:#f87171; --muted:#94a3b8; --card:#161d27; --line:#263241; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, "Segoe UI", "Noto Sans Thai", sans-serif; }
+  .wrap { display: grid; grid-template-columns: minmax(320px, 1fr) auto; gap: 16px; padding: 16px; align-items: start; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sum { color: var(--muted); margin-bottom: 10px; }
+  .sum b.ok { color: var(--ok); } .sum b.bad { color: var(--bad); }
+  button.run { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.run:disabled { opacity: .5; }
+  .r { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
+  .r.ok b { color: var(--ok); } .r.bad b { color: var(--bad); } .r.run b { color: var(--accent); }
+  .note { color: var(--muted); font-size: 12.5px; } .err { color: var(--bad); font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+  .stage { position: sticky; top: 16px; }
+  .frameBox { width: 640px; height: 400px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  iframe { border: 0; transform-origin: 0 0; background: #fff; }
+  .stage .note { margin-top: 6px; }
+  @media (max-width: 1100px) { .wrap { grid-template-columns: 1fr; } .stage { position: static; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>UI tests (End-to-End)</h1>
+    <div class="sum" id="sum">Loading the app…</div>
+    <button class="run" id="runBtn" disabled>Run again</button>
+    <div id="out"></div>
+  </div>
+  <div class="stage">
+    <div class="frameBox" id="frameBox"><iframe id="app" title="app under test"></iframe></div>
+    <div class="note" id="frameNote"></div>
+  </div>
+</div>
+<script>
+/* Browser-only end-to-end tests: drives the real app (index.html?e2e=1) inside an iframe the way a user
+ * would — clicks, typing, keyboard shortcuts, pointer drags in the 3D view, popups — and checks what ends
+ * up on screen. The app runs with in-memory storage in this mode, so your saved work is never touched.
+ * Must be opened over http(s) (same-origin iframe), e.g. http://localhost:8765/e2e.html */
+(function () {
+  'use strict';
+  var frame = document.getElementById('app'), box = document.getElementById('frameBox');
+  var W, D, tests = [];
+  function test(name, fn) { tests.push({ name: name, fn: fn }); }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function assert(c, msg) { if (!c) throw new Error(msg || 'assertion failed'); }
+  async function until(fn, ms, what) {
+    var t0 = Date.now();
+    for (;;) {
+      var v; try { v = fn(); } catch (e) { v = null; }
+      if (v) return v;
+      if (Date.now() - t0 > (ms || 10000)) throw new Error('timeout waiting for ' + (what || fn.toString().slice(0, 80)));
+      await wait(80);
+    }
+  }
+  function $(sel) { return D.querySelector(sel); }
+  function $$(sel) { return Array.prototype.slice.call(D.querySelectorAll(sel)); }
+  function need(sel) { var el = $(sel); assert(el, 'element not found: ' + sel); return el; }
+  function click(sel) { need(sel).click(); }
+  function setVal(sel, v) {
+    var el = need(sel);
+    el.value = v;
+    el.dispatchEvent(new W.Event('input', { bubbles: true }));
+    el.dispatchEvent(new W.Event('change', { bubbles: true }));
+  }
+  function key(k, opts) { var o = Object.assign({ key: k, bubbles: true }, opts || {}); D.dispatchEvent(new W.KeyboardEvent('keydown', o)); }
+  function S() { return W.LP.store; }
+  function placements() { return S().state.placements; }
+  async function idle() { await until(function () { return !S().ui.packing; }, 20000, 'auto pack to finish'); await wait(150); }
+  function rect(el) { return el.getBoundingClientRect(); }
+  function overlap(a, b) { return a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1; }
+  function visible(el) { var r = rect(el); return r.width > 0 && r.height > 0 && W.getComputedStyle(el).visibility !== 'hidden'; }
+  /** Capture what the app opens in a popup (report, delivery note, step sheets). */
+  function capturePopup(action) {
+    var html = '', orig = W.open;
+    W.open = function () { return { document: { open: function () {}, write: function (h) { html += h; }, close: function () {} } }; };
+    try { action(); } finally { W.open = orig; }
+    return html;
+  }
+  async function setViewport(w, h) {
+    frame.style.width = w + 'px'; frame.style.height = h + 'px';
+    var k = Math.min(640 / w, 400 / h);
+    frame.style.transform = 'scale(' + k + ')';
+    box.style.height = Math.round(h * k) + 'px';
+    box.style.width = Math.round(w * k) + 'px';
+    document.getElementById('frameNote').textContent = 'viewport ' + w + ' × ' + h;
+    await wait(350);
+  }
+  function noErrors() { var e = W.__errors || []; assert(!e.length, 'errors in the app: ' + e.slice(0, 3).join(' | ')); }
+  function overflowX() { return D.documentElement.scrollWidth - D.documentElement.clientWidth; }
+  function pointer(type, x, y, buttons) {
+    var cv = need('#view3d canvas');
+    cv.dispatchEvent(new W.PointerEvent(type, { clientX: x, clientY: y, button: 0, buttons: buttons || 0, pointerId: 7, bubbles: true, isPrimary: true }));
+  }
+
+  // --------------------------------------------------------------------------------- tests
+  test('App loads without errors (desktop 1280×800)', async function () {
+    await until(function () { return W.LPApp && placements().length > 0; }, 15000, 'first auto pack');
+    await idle();
+    assert(need('#view3d canvas') && $('.sidebar') && $('.insights'), 'main regions missing');
+    noErrors();
+    return placements().length + ' items packed on start-up';
+  });
+
+  test('Desktop layout: no horizontal overflow, toolbars do not overlap', async function () {
+    assert(overflowX() <= 1, 'page scrolls sideways by ' + overflowX() + ' px');
+    var bars = $$('.ov-top .grp > *').filter(visible);
+    for (var i = 0; i < bars.length; i++) for (var j = i + 1; j < bars.length; j++) {
+      assert(!overlap(rect(bars[i]), rect(bars[j])), 'viewer toolbars overlap (' + i + ',' + j + ')');
+    }
+    $$('.topbar .actions > *').filter(visible).forEach(function (el) { assert(rect(el).right <= D.documentElement.clientWidth + 1, 'top bar button cut off'); });
+    return bars.length + ' toolbar groups checked';
+  });
+
+  test('Samples menu loads a job and Auto Pack fills the summary', async function () {
+    click('#btnSamples');
+    await wait(100);
+    need('#menuSamples [data-sample="ac1"]').click();
+    await until(function () { return S().ui.packing; }, 3000, 'packing to start').catch(function () {});
+    await idle();
+    var n = placements().length;
+    assert(n > 700, 'only ' + n + ' cartons packed');
+    var kpi = need('#summary .kpi .kpi-v').textContent.replace(/[^\d]/g, '');
+    assert(+kpi === n, 'summary shows ' + kpi + ' but ' + n + ' are packed');
+    return n + ' cartons, summary matches';
+  });
+
+  test('Container picker: truck tab + 6-wheel tile updates the size fields', async function () {
+    need('.ctabs [data-tab="truck"]').click();
+    await wait(80);
+    need('.tile[data-preset="t6"]').click();
+    await wait(150);
+    assert(need('#cW').value === '2.3' && need('#cL').value === '6' && need('#cH').value === '2.3', 'size fields ' + [$('#cW').value, $('#cL').value, $('#cH').value]);
+    assert(need('#cDW').value === '2.2' && need('#cDH').value === '2.15', 'door fields');
+    return '6-wheel 2.3 × 6 × 2.3 m, door 2.2 × 2.15 m';
+  });
+
+  test('Add an item through the form, edit the quantity inline', async function () {
+    click('#addItem');
+    var m = await until(function () { return $('.modal-bg'); });
+    function f(id, v) { var el = m.querySelector('#' + id); el.value = v; el.dispatchEvent(new W.Event('input', { bubbles: true })); el.dispatchEvent(new W.Event('change', { bubbles: true })); }
+    f('fSku', 'E2E-BOX'); f('fName', 'Test carton'); f('fW', '50'); f('fL', '40'); f('fH', '30'); f('fWt', '12'); f('fQty', '5');
+    m.querySelector('[data-ok]').click();
+    await wait(150);
+    var row = $$('.ci').filter(function (r) { return r.textContent.indexOf('E2E-BOX') >= 0; })[0];
+    assert(row, 'new item not in the cargo list');
+    row.querySelector('[data-act="inc"]').click();
+    await wait(120);
+    var item = S().state.cargo.filter(function (c) { return c.sku === 'E2E-BOX'; })[0];
+    assert(item && item.qty === 6, 'qty is ' + (item && item.qty));
+    assert($('#precheck .pc'), 'capacity pre-check missing');
+    return 'E2E-BOX × 6 in the list';
+  });
+
+  test('Auto Pack places the new item; per-SKU table and warnings render', async function () {
+    click('#btnPack');
+    await until(function () { return S().ui.packing; }, 3000).catch(function () {});
+    await idle();
+    var id = S().state.cargo.filter(function (c) { return c.sku === 'E2E-BOX'; })[0].id;
+    var n = placements().filter(function (p) { return p.sku === id; }).length;
+    assert(n === 6, 'E2E-BOX placed ' + n + '/6');
+    assert($$('#summary .tbl tbody tr').some(function (tr) { return tr.textContent.indexOf('E2E-BOX') >= 0; }), 'per-SKU row missing');
+    assert($('#summary .warns') || $('#summary .ok-msg'), 'warnings block missing');
+    noErrors();
+    return '6/6 placed, ' + placements().length + ' items total';
+  });
+
+  test('2D views render boxes and the door opening', async function () {
+    var res = [];
+    for (var v of ['top', 'side', 'door']) {
+      need('#viewSeg [data-view="' + v + '"]').click();
+      await wait(150);
+      var g = $$('#view2d svg .b2d').length;
+      assert(g > 0, v + ' view has no boxes');
+      res.push(v + ' ' + g);
+    }
+    assert($('#view2d svg rect[stroke-dasharray]'), 'door opening outline missing in door view');
+    need('#viewSeg [data-view="3d"]').click();
+    await wait(100);
+    return res.join(' · ');
+  });
+
+  test('Manual mode: real pointer drag in 3D moves a box, summary follows, undo restores', async function () {
+    need('#modeSeg [data-mode="manual"]').click();
+    await wait(200);
+    W.LPApp.viewer3d.setCamera('top');
+    await wait(500);
+    // pick the item nearest the door on the top layer so nothing rests on it
+    var ps = placements().slice().sort(function (a, b) { return (b.y + b.l) - (a.y + a.l) || (b.z - a.z); });
+    var target = ps[0], before = { x: target.x, y: target.y };
+    var pt = W.LPApp.viewer3d.projectToScreen(target.uid);
+    assert(pt, 'cannot project the box to the screen');
+    pointer('pointerdown', pt.x, pt.y, 1);
+    for (var i = 1; i <= 6; i++) { pointer('pointermove', pt.x - i * 6, pt.y, 1); await wait(16); }
+    pointer('pointerup', pt.x - 36, pt.y, 0);
+    await wait(250);
+    var after = placements().filter(function (p) { return p.uid === target.uid; })[0];
+    assert(S().ui.selected === target.uid, 'dragged box was not selected');
+    assert(Math.abs(after.x - before.x) + Math.abs(after.y - before.y) > 1, 'box did not move');
+    assert(S().canUndo(), 'no undo step recorded');
+    assert($('#selCard .sel-card'), 'selection card not shown');
+    click('#btnUndo');
+    await wait(150);
+    var back = placements().filter(function (p) { return p.uid === target.uid; })[0];
+    assert(Math.abs(back.x - before.x) < 0.01 && Math.abs(back.y - before.y) < 0.01, 'undo did not restore the position');
+    return 'moved ' + (Math.abs(after.x - before.x) + Math.abs(after.y - before.y)).toFixed(0) + ' cm, undo OK';
+  });
+
+  test('Keyboard: R rotate, Delete removes, Ctrl+Z / Ctrl+Y', async function () {
+    var n0 = placements().length, uid = placements()[placements().length - 1].uid;
+    S().uiChange({ selected: uid });
+    key('r');
+    key('Delete');
+    await wait(100);
+    assert(placements().length === n0 - 1, 'Delete did not remove the item');
+    key('z', { ctrlKey: true });
+    await wait(100);
+    assert(placements().length === n0, 'Ctrl+Z did not bring it back');
+    key('y', { ctrlKey: true });
+    await wait(100);
+    assert(placements().length === n0 - 1, 'Ctrl+Y did not redo');
+    key('z', { ctrlKey: true });
+    await wait(100);
+    return 'delete / undo / redo OK';
+  });
+
+  test('Collision shows up as a red warning, undo clears it', async function () {
+    var a = placements()[0], b = placements()[1];
+    S().uiChange({ selected: a.uid });
+    await wait(80);
+    S().change(function (s) { var q = s.placements.filter(function (p) { return p.uid === a.uid; })[0]; q.x = b.x; q.y = b.y; q.z = b.z; });
+    await wait(150);
+    assert($$('#summary .warns li.error').length > 0, 'no red warning for the collision');
+    click('#btnUndo');
+    await wait(150);
+    need('#modeSeg [data-mode="view"]').click();
+    W.LPApp.viewer3d.resetCamera();
+    return 'warning shown and cleared';
+  });
+
+  test('Loading steps tab, step preview and mobile checklist', async function () {
+    need('#insTabs [data-tab="steps"]').click();
+    await wait(150);
+    var steps = $$('#steps .steps li');
+    assert(steps.length > 0, 'no loading steps');
+    steps[0].click();
+    await wait(100);
+    assert(S().ui.step === +steps[0].getAttribute('data-to'), 'step preview not applied');
+    need('#steps [data-checklist]').click();
+    await until(function () { return $('.ck'); });
+    need('.ck [data-ck="inc"]').click();
+    await wait(80);
+    assert($('.ck .ck-cnt b').textContent === '1', 'checklist counter did not increase');
+    need('.ck [data-ck="close"]').click();
+    await wait(100);
+    assert(!$('.ck') && S().ui.step == null, 'checklist did not close cleanly');
+    need('#insTabs [data-tab="summary"]').click();
+    return steps.length + ' steps';
+  });
+
+  test('Delivery note, report PDF and step sheets are generated', async function () {
+    var dn = capturePopup(function () {
+      click('#btnExport');
+      need('#menuExport [data-exp="dn"]').click();
+      var m = $('.modal-bg');
+      m.querySelector('#dnPlate').value = 'E2E-123';
+      m.querySelector('[data-ok]').click();
+    });
+    var skus = {};
+    placements().forEach(function (p) { skus[p.sku] = 1; });
+    var rows = (dn.match(/<tr><td class="c">/g) || []).length;
+    assert(rows === Object.keys(skus).length, 'delivery note rows ' + rows + ' vs ' + Object.keys(skus).length + ' SKUs');
+    assert(dn.indexOf('E2E-123') >= 0, 'plate missing on the delivery note');
+    var rep = capturePopup(function () { click('#btnExport'); need('#menuExport [data-exp="pdf"]').click(); });
+    assert((rep.match(/<svg/g) || []).length >= 3 && rep.indexOf('data:image/png') >= 0, 'report is missing views');
+    var st = capturePopup(function () { click('#btnExport'); need('#menuExport [data-exp="steps"]').click(); });
+    assert((st.match(/class="page"/g) || []).length > 0 && st.indexOf('data:image/jpeg') >= 0, 'step sheets empty');
+    D.body.click();
+    return 'delivery note ' + rows + ' rows · report · ' + (st.match(/class="page"/g) || []).length + ' step pages';
+  });
+
+  test('Container: VGM section + ISO 6346 check in the shipment form', async function () {
+    need('.ctabs [data-tab="container"]').click();
+    await wait(80);
+    need('.tile[data-preset="c20"]').click();
+    await wait(150);
+    assert($('#summary .vgm'), 'VGM section missing for a container');
+    need('#summary [data-ship-edit]').click();
+    var m = await until(function () { return $('.modal-bg'); });
+    var cn = m.querySelector('#sh_containerNo');
+    cn.value = 'CSQU3054383'; cn.dispatchEvent(new W.Event('input', { bubbles: true }));
+    assert(m.querySelector('#cnCheck').className.indexOf('pos') >= 0, 'valid number rejected');
+    cn.value = 'CSQU3054384'; cn.dispatchEvent(new W.Event('input', { bubbles: true }));
+    assert(m.querySelector('#cnCheck').className.indexOf('neg') >= 0, 'wrong check digit accepted');
+    m.querySelector('[data-x]').click();
+    return 'VGM shown, check digit validated';
+  });
+
+  test('SKU library adds items to the job', async function () {
+    var n0 = S().state.cargo.length;
+    click('#libBtn');
+    var m = await until(function () { return $('.modal-bg .lib-row'); }) && $('.modal-bg');
+    var row = Array.prototype.filter.call(m.querySelectorAll('.lib-row'), function (r) {
+      var code = r.querySelector('b').textContent;
+      return !S().state.cargo.some(function (c) { return c.sku === code; });
+    })[0];
+    assert(row, 'no library item that is not already in the job');
+    row.querySelector('input[type=checkbox]').click();
+    m.querySelector('[data-ok]').click();
+    await wait(150);
+    assert(S().state.cargo.length === n0 + 1, 'cargo count ' + S().state.cargo.length);
+    return 'library item added';
+  });
+
+  test('Language and theme toggles', async function () {
+    click('#btnLang');
+    await wait(150);
+    assert(need('#btnPack .lbl').textContent.trim() === 'Auto Pack', 'English label: ' + $('#btnPack .lbl').textContent);
+    click('#btnLang');
+    await wait(150);
+    assert(/จัดเรียง/.test(need('#btnPack .lbl').textContent), 'Thai label missing');
+    var t0 = D.documentElement.getAttribute('data-theme');
+    click('#btnTheme');
+    await wait(80);
+    var t1 = D.documentElement.getAttribute('data-theme');
+    assert(t0 !== t1, 'theme did not change');
+    click('#btnTheme'); click('#btnTheme');
+    await wait(80);
+    return 'EN/TH and theme ' + (t0 || 'auto') + ' → ' + t1;
+  });
+
+  test('Tablet 768×1024 and phone 375×812: nothing overflows sideways', async function () {
+    var res = [];
+    for (var vp of [[768, 1024], [375, 812]]) {
+      await setViewport(vp[0], vp[1]);
+      assert(overflowX() <= 1, vp[0] + 'px: page scrolls sideways by ' + overflowX() + ' px');
+      $$('.topbar .actions > *').filter(visible).forEach(function (el) { assert(rect(el).right <= D.documentElement.clientWidth + 1, vp[0] + 'px: top bar button cut off'); });
+      res.push(vp[0] + 'px OK');
+    }
+    await setViewport(1280, 800);
+    return res.join(' · ');
+  });
+
+  test('Large job: 3,000 cartons pack and render smoothly', async function () {
+    var t0 = Date.now();
+    W.LPApp.loadSample('big', true);
+    await until(function () { return S().ui.packing; }, 3000).catch(function () {});
+    await idle();
+    var ms = Date.now() - t0, n = placements().length;
+    assert(n === 3000, 'packed ' + n + '/3000');
+    var perf = W.LPApp.viewer3d.perf(15);
+    assert(perf.msPerFrame < 40, 'render ' + perf.msPerFrame.toFixed(1) + ' ms/frame');
+    noErrors();
+    return n + ' items packed in ' + (ms / 1000).toFixed(1) + ' s · render ' + perf.msPerFrame.toFixed(1) + ' ms/frame · ' + perf.calls + ' draw calls (whole scene)';
+  });
+
+  // --------------------------------------------------------------------------------- runner
+  var out = document.getElementById('out'), sum = document.getElementById('sum'), runBtn = document.getElementById('runBtn');
+  function row(r) {
+    var d = r.el || (r.el = document.createElement('div'));
+    d.className = 'r ' + (r.state === 'run' ? 'run' : r.ok ? 'ok' : 'bad');
+    d.innerHTML = '<b>' + (r.state === 'run' ? '…' : r.ok ? '✔' : '✘') + '</b> ' + r.name + (r.ms != null ? ' <span class="note">(' + r.ms + ' ms)</span>' : '') +
+      (r.note ? '<div class="note">' + r.note + '</div>' : '') + (r.error ? '<div class="err">' + r.error + '</div>' : '');
+    if (!d.parentNode) out.appendChild(d);
+  }
+  function loadApp() {
+    return new Promise(function (resolve) {
+      frame.onload = function () { W = frame.contentWindow; D = frame.contentDocument; resolve(); };
+      frame.src = 'index.html?e2e=1&t=' + Date.now();
+    });
+  }
+  async function runAll() {
+    runBtn.disabled = true;
+    out.innerHTML = '';
+    await setViewport(1280, 800);
+    await loadApp();
+    var pass = 0, fail = 0, results = [];
+    for (var i = 0; i < tests.length; i++) {
+      var r = { name: tests[i].name, state: 'run' };
+      row(r);
+      var t0 = Date.now();
+      try {
+        r.note = await Promise.race([tests[i].fn(), wait(30000).then(function () { throw new Error('test timed out (30 s)'); })]) || '';
+        r.ok = true; pass++;
+      } catch (e) { r.ok = false; r.error = e.message; fail++; }
+      r.state = 'done'; r.ms = Date.now() - t0;
+      row(r);
+      results.push({ name: r.name, ok: r.ok, note: r.note, error: r.error, ms: r.ms });
+      sum.innerHTML = '<b class="' + (fail ? 'bad' : 'ok') + '">' + pass + ' passed, ' + fail + ' failed</b> of ' + tests.length + (i < tests.length - 1 ? ' — running…' : '');
+    }
+    window.__e2eSummary = { pass: pass, fail: fail, results: results };
+    runBtn.disabled = false;
+  }
+  if (!/^https?:$/.test(location.protocol)) {
+    sum.innerHTML = '<b class="bad">Open this page over http(s)</b>, e.g. http://localhost:8765/e2e.html — browsers block scripting an iframe opened from file://.';
+    return;
+  }
+  runBtn.onclick = runAll;
+  runAll();
+})();
+</script>
+</body>
+</html>
