@@ -1,0 +1,7 @@
+sku,name,width,length,height,unit,weight,weight_unit,qty,rotation,stackable,max_stack,max_load,fragile,package,drop_order,color
+PLT-EUR,Euro pallet,800,1200,1200,mm,450,kg,4,upright,no,1,0,no,pallet,3,#4e79a7
+DRM-200,Drum 200L,58,58,88,cm,180,kg,6,upright,yes,2,400,no,drum,3,#f28e2b
+BOX-L,Box large,60,40,40,cm,18,kg,40,all,yes,0,0,no,box,2,#59a14f
+BOX-M,Box medium,50,30,35,cm,9,kg,60,all,yes,0,0,no,box,2,#e15759
+GLS-01,Glassware,18,14,12,in,13,lb,20,upright,yes,0,0,yes,box,1,#76b7b2
+TV-55,TV 55 inch,20,135,85,cm,22,kg,12,upright,yes,0,30,no,box,1,#edc948
