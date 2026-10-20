@@ -335,6 +335,37 @@
     return 'EN/TH and theme ' + (t0 || 'auto') + ' → ' + t1;
   });
 
+  test('Axes menu: gizmo, origin guides, rulers, view cube, all off', async function () {
+    click('[data-view="3d"]');
+    var p = placements().filter(function (q) { return q.x > 20 && q.y > 20; })[0] || placements()[0];
+    S().uiChange({ selected: p.uid });
+    await idle();
+    var axOn = function (id, on) { var el = need(id); if (el.checked !== on) el.click(); };
+    axOn('#axGizmo', true); axOn('#axOrigin', true); axOn('#axRuler', true); axOn('#axCube', false);
+    $$('#axRulerMode [data-rm]').filter(function (b) { return b.getAttribute('data-rm') === 'always'; })[0].click();
+    await wait(250);
+    var nav = need('.v3d-nav');
+    assert(getComputedStyle(nav).display !== 'none' && nav.querySelectorAll('line').length === 3, 'axis gizmo not drawn');
+    var shown = function (cls) { return $$('.v3d-lbl' + cls).filter(function (l) { return l.style.display !== 'none'; }).length; };
+    assert(shown('.org') === 1, 'origin label missing');
+    assert($$('.v3d-guides path[stroke-dasharray]').length >= 1, 'dashed position guides missing');
+    assert(shown('.rl') >= 5, 'ruler labels missing');
+    var sel = need('#selCard .sel-pos');
+    assert(sel.classList.contains('axes') && /x/i.test(sel.textContent), 'colour-coded x/y/z inputs missing');
+    axOn('#axCube', true);
+    await wait(150);
+    assert(nav.querySelectorAll('.nav-face').length >= 2, 'view cube faces missing');
+    var stored = JSON.parse(W.localStorage.getItem('lp.axes'));
+    assert(stored.cube && stored.ruler && stored.rulerMode === 'always', 'settings not remembered');
+    click('#axOff');
+    await wait(200);
+    assert(getComputedStyle(nav).display === 'none' && shown('') === 0 && !$('.v3d-guides path'), 'turn-all-off left something visible');
+    assert(!need('#selCard .sel-pos').classList.contains('axes'), 'selection card did not go back to the original look');
+    S().uiChange({ selected: null });
+    noErrors();
+    return 'gizmo, origin, rulers, cube and all-off checked';
+  });
+
   test('Tablet 768×1024 and phone 375×812: nothing overflows sideways', async function () {
     var res = [];
     for (var vp of [[768, 1024], [375, 812]]) {
