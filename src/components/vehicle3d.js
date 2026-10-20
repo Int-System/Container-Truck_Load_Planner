@@ -58,7 +58,7 @@
   function lerp2(p, q, t) { return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; }
 
   /** ISO container structure around the cargo box: corner posts, rails, corner castings, door locking bars. */
-  function containerFrame(box, cyl, M, L, W, H) {
+  function containerFrame(box, cyl, M, L, W, H, doorsOpen) {
     var front = -L / 2, door = L / 2, cm = M.container, pw = 14;
     [-1, 1].forEach(function (sg) {
       [front + pw / 2, door - pw / 2].forEach(function (xp) { box(pw, H, 10, cm, xp, H / 2, sg * (W / 2 + 3)); });
@@ -75,7 +75,7 @@
         });
       });
     });
-    [-0.35, -0.12, 0.12, 0.35].forEach(function (k) { cyl(1.6, 1.6, H - 10, M.alu, door + 3, H / 2, k * W, null, 8); });
+    if (!doorsOpen) [-0.35, -0.12, 0.12, 0.35].forEach(function (k) { cyl(1.6, 1.6, H - 10, M.alu, door + 3, H / 2, k * W, null, 8); });
   }
 
   /** Ground shadow: invisible plane that receives the real shadow + a soft contact blob. */
@@ -94,8 +94,118 @@
     G.add(blob);
   }
 
-  /** Shipping container standing on the ground — no vehicle. */
-  function buildContainerOnly(THREE, C) {
+  // ---------------------------------------------------------------- realistic container shell (Display → view style)
+  /** Corrugated steel panel: x along `len` (centred), y up 0..h, corrugations bulging towards +z. */
+  function corrugatedGeo(THREE, len, h) {
+    var p = 27.8, a = 7.2, b = 7.0, d = 3.6, t = 0.4, s = (p - a - b) / 2, pts = [];
+    for (var x0 = -len / 2; x0 < len / 2 - 0.01; x0 += p) {
+      pts.push([x0, 0], [Math.min(x0 + b, len / 2), 0]);
+      if (x0 + b + s + a <= len / 2) pts.push([x0 + b + s, d], [x0 + b + s + a, d]);
+    }
+    pts.push([len / 2, 0]);
+    var sh = new THREE.Shape();
+    sh.moveTo(pts[0][0], pts[0][1]);
+    pts.forEach(function (q) { sh.lineTo(q[0], q[1]); });
+    for (var i = pts.length - 1; i >= 0; i--) sh.lineTo(pts[i][0], pts[i][1] - t);
+    var g = new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false, curveSegments: 1 });
+    g.rotateX(Math.PI / 2);          // extrusion → height (downwards), profile depth → +z
+    g.translate(0, h, 0);
+    return g;
+  }
+  function woodTexture(THREE) {
+    var t = canvasTex(THREE, 'wood', 512, 512, function (g, w, h) {
+      var n = 8, rnd = function (k) { var x = Math.sin(k * 127.1) * 43758.5453; return x - Math.floor(x); };
+      for (var i = 0; i < n; i++) {
+        var s = 92 + rnd(i) * 28 | 0;
+        g.fillStyle = 'rgb(' + s + ',' + (s * 0.68 | 0) + ',' + (s * 0.42 | 0) + ')';
+        g.fillRect(0, i * h / n, w, h / n);
+        for (var k = 0; k < 46; k++) {           // grain
+          g.fillStyle = 'rgba(70,38,15,' + (rnd(i * 97 + k) * 0.14).toFixed(3) + ')';
+          g.fillRect(rnd(i * 31 + k) * w, i * h / n + rnd(i * 53 + k) * h / n, 30 + rnd(k + i) * 140, 1.4);
+        }
+        g.fillStyle = 'rgba(30,15,5,0.45)'; g.fillRect(0, i * h / n, w, 2);        // plank gap
+        g.fillRect(rnd(i + 7) * w, i * h / n, 2, h / n);                            // butt joint
+      }
+    });
+    t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
+  function plateTexture(THREE, text) {
+    var c = document.createElement('canvas');
+    c.width = 1024; c.height = 64;
+    var g = c.getContext('2d');
+    g.fillStyle = '#ffffff';
+    g.font = 'bold 44px Arial, sans-serif';
+    var fit = Math.min(44, 44 * 980 / Math.max(1, g.measureText(text).width));   // shrink long lines to fit
+    g.font = 'bold ' + fit.toFixed(1) + 'px Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(text, 512, 34);
+    var t = new THREE.CanvasTexture(c);
+    t.anisotropy = 4;
+    return t;
+  }
+  /** Corrugated walls, roof, wooden floor and open doors with locking rods (+ container number plate). */
+  function realShell(THREE, G, add, box, cyl, M, C) {
+    var L = C.L, W = C.W, H = C.H, walls = {};
+    var steel = new THREE.MeshStandardMaterial({ color: 0x9a3a26, metalness: 0.3, roughness: 0.6, side: THREE.DoubleSide });
+    var wood = woodTexture(THREE);
+    wood.repeat.set(L / 240, W / 240);
+    var floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.85, metalness: 0 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.15;
+    floor.receiveShadow = true;
+    G.add(floor);
+    var left = add(new THREE.Mesh(corrugatedGeo(THREE, L - 2, H), steel));
+    left.position.z = W / 2 + 0.6;
+    var right = add(new THREE.Mesh(corrugatedGeo(THREE, L - 2, H), steel));
+    right.position.z = -W / 2 - 0.6; right.scale.z = -1;
+    var front = add(new THREE.Mesh(corrugatedGeo(THREE, W, H), steel));
+    front.rotation.y = -Math.PI / 2; front.position.x = -L / 2 - 0.6;
+    var roof = box(L, 1.4, W + 6, steel, 0, H + 0.9, 0);
+    walls = { left: left, right: right, front: front, roof: roof };
+    // doors swung open ~260°, folded back against the side walls; leaf direction (0,0,-s) rotated about the hinge post
+    var lw = W / 2 + 3;
+    // container number + weights in white on the rear header (stays in view; the folded doors face away)
+    if (C.containerNo || C.maxGross) {
+      var f = function (v) { return LP.units ? LP.units.fmt(v, 0) : String(Math.round(v)); };
+      var parts = [];
+      if (C.containerNo) parts.push(String(C.containerNo).toUpperCase().replace(/^([A-Z]{4})(\d{6})(\d)$/, '$1 $2 $3'));
+      if (C.maxGross) parts.push('MAX GROSS ' + f(C.maxGross) + ' KG');
+      if (C.tare) parts.push('TARE ' + f(C.tare) + ' KG');
+      var pl = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.92, W * 0.92 / 16), new THREE.MeshBasicMaterial({ map: plateTexture(THREE, parts.join('   ')), transparent: true, depthWrite: false }));
+      pl.rotation.y = Math.PI / 2;
+      pl.position.set(L / 2 + 0.6, H + 1.5, 0);
+      G.add(pl);
+    }
+    [-1, 1].forEach(function (s) {
+      var hinge = new THREE.Group();
+      hinge.position.set(L / 2 + 6, 0, s * (W / 2 + 3));
+      var leaf = new THREE.Mesh(new THREE.BoxGeometry(4, H + 10, lw), steel);
+      leaf.position.set(2, H / 2, -s * lw / 2);
+      hinge.add(leaf);
+      [0.18, 0.5, 0.82].forEach(function (k) {
+        var rib = new THREE.Mesh(new THREE.BoxGeometry(2, 7, lw - 6), steel);
+        rib.position.set(4.6, H * k, -s * lw / 2); hinge.add(rib);
+      });
+      [0.32, 0.74].forEach(function (k) {
+        var rod = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, H + 4, 10), M.alu);
+        rod.position.set(6.4, H / 2, -s * lw * k); hinge.add(rod);
+        var handle = new THREE.Mesh(new THREE.BoxGeometry(3, 30, 5), M.casting);
+        handle.position.set(8.2, 112, -s * lw * k); hinge.add(handle);
+        [4, H - 4].forEach(function (y) { var kp = new THREE.Mesh(new THREE.BoxGeometry(5, 8, 7), M.casting); kp.position.set(6.4, y, -s * lw * k); hinge.add(kp); });
+      });
+      hinge.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      hinge.rotation.y = -s * 4.53;
+      hinge.position.z += s * 5;          // clear of the corrugations when folded back
+      G.add(hinge);
+      walls[s > 0 ? 'doorLeft' : 'doorRight'] = hinge;
+    });
+    return walls;
+  }
+
+  /** Shipping container standing on the ground — no vehicle. With opts.real: full steel shell. */
+  function buildContainerOnly(THREE, C, opts) {
+    opts = opts || {};
     var G = new THREE.Group(), L = C.L, W = C.W, H = C.H, groundY = -18;
     var M = {
       container: new THREE.MeshStandardMaterial({ color: 0xb4432c, metalness: 0.25, roughness: 0.55 }),
@@ -115,14 +225,16 @@
     }
     box(L - 4, 8, W, M.floor, 0, -4.2, 0);                                    // floor structure
     for (var cx = -L / 2 + 40; cx < L / 2 - 20; cx += 60) box(6, 10, W, M.casting, cx, -13, 0);   // cross members
-    containerFrame(box, cyl, M, L, W, H);
+    containerFrame(box, cyl, M, L, W, H, !!opts.real);
+    var walls = opts.real ? realShell(THREE, G, add, box, cyl, M, C) : null;
     groundShadow(THREE, G, -L / 2 - 10, L / 2 + 10, W, groundY);
-    return { group: G, ext: { xMin: -L / 2 - 12, xMax: L / 2 + 12, yMin: groundY, yMax: H + 10, zMax: W / 2 + 12 } };
+    var xMax = L / 2 + (opts.real ? 24 : 12);
+    return { group: G, walls: walls, ext: { xMin: -L / 2 - 12, xMax: xMax, yMin: groundY, yMax: H + 10, zMax: W / 2 + (opts.real ? 22 : 12) } };
   }
 
   LP.buildVehicle = function (THREE, C, type, opts) {
     opts = opts || {};
-    if (type === 'container') return buildContainerOnly(THREE, C);
+    if (type === 'container') return buildContainerOnly(THREE, C, opts);
     var sp = LP.VEHICLE_DIMS[type];
     var G = new THREE.Group();
     if (!sp) return { group: G, ext: null };

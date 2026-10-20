@@ -366,6 +366,33 @@
     return 'gizmo, origin, rulers, cube and all-off checked';
   });
 
+  test('Realistic style, colour modes and animated playback', async function () {
+    click('[data-view="3d"]');
+    $$('#tStyle [data-st]').filter(function (b) { return b.getAttribute('data-st') === 'real'; })[0].click();
+    await wait(300);
+    assert(S().ui.style === 'real' && W.localStorage.getItem('lp.style') === 'real', 'realistic style not applied');
+    ['weight', 'drop', 'fragile'].forEach(function (m) {
+      $$('#tColorBy [data-cb]').filter(function (b) { return b.getAttribute('data-cb') === m; })[0].click();
+      assert(S().ui.colorBy === m && !need('#colorLegend').classList.contains('hidden'), 'legend missing for ' + m);
+    });
+    $$('#tColorBy [data-cb]').filter(function (b) { return b.getAttribute('data-cb') === 'sku'; })[0].click();
+    assert(need('#colorLegend').classList.contains('hidden'), 'legend should hide for SKU colours');
+    var pick = function (sel, v, attr) { $$(sel).filter(function (b) { return b.getAttribute(attr) === v; })[0].click(); };
+    pick('#tSpeed [data-sp]', '4', 'data-sp');
+    click('#tPlay');
+    await wait(600);
+    var mid = S().ui.step;
+    click('#tPlay');
+    assert(mid != null && mid > 0 && mid < placements().length, 'animated playback did not advance (step ' + mid + ')');
+    S().uiChange({ step: null });
+    pick('#tSpeed [data-sp]', '1', 'data-sp');
+    pick('#tStyle [data-st]', 'flat', 'data-st');
+    await wait(200);
+    assert(S().ui.style === 'flat', 'could not go back to the simple style');
+    noErrors();
+    return 'real style, 3 colour modes, playback at 4× (step ' + mid + ')';
+  });
+
   test('Tablet 768×1024 and phone 375×812: nothing overflows sideways', async function () {
     var res = [];
     for (var vp of [[768, 1024], [375, 812]]) {

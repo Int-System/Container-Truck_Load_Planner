@@ -34,6 +34,29 @@
   /**
    * ctx: { C, placements, specs, flags, tiers, selected, layer, hiddenSku, cut, step, cog, showLabels, forPrint }
    */
+  // ---- colour modes (Display → "Colour by"): shared by the 2D views and viewer3d.js
+  LP.DROP_COLORS = ['#1D9E75', '#378ADD', '#7F77DD', '#D85A30', '#D4537E', '#BA7517', '#5F5E5A', '#639922'];
+  var WEIGHT_STOPS = [[0, [253, 233, 196]], [0.5, [239, 163, 61]], [1, [163, 45, 45]]];
+  LP.weightColor = function (t) {
+    t = Math.max(0, Math.min(1, t || 0));
+    var a = t <= 0.5 ? WEIGHT_STOPS[0] : WEIGHT_STOPS[1], b = t <= 0.5 ? WEIGHT_STOPS[1] : WEIGHT_STOPS[2], k = (t - a[0]) / (b[0] - a[0]);
+    return '#' + [0, 1, 2].map(function (i) { return ('0' + Math.round(a[1][i] + (b[1][i] - a[1][i]) * k).toString(16)).slice(-2); }).join('');
+  };
+  /** Colour of one placed item: 'sku' (default) · 'weight' (heat map on a log scale between the lightest
+   *  and heaviest piece, so 6 kg and 24 kg cartons still differ next to a 450 kg pallet) · 'drop' · 'fragile'. */
+  LP.cargoColor = function (p, spec, mode, maxW, minW) {
+    spec = spec || {};
+    if (mode === 'weight') {
+      var w = Math.max(p.weight || 0, 0.01), lo = Math.max(minW || 0.01, 0.01), hi = Math.max(maxW || 1, lo * 1.0001);
+      return LP.weightColor(hi / lo < 1.5 ? w / hi : Math.log(w / lo) / Math.log(hi / lo));
+    }
+    if (mode === 'drop') return LP.DROP_COLORS[((+spec.dropOrder || 1) - 1) % LP.DROP_COLORS.length];
+    if (mode === 'fragile') return spec.fragile ? '#e24b4a' : '#d5dbe3';
+    return spec.color || '#888888';
+  };
+  LP.maxWeight = function (placements) { return placements.reduce(function (m, p) { return Math.max(m, p.weight || 0); }, 0); };
+  LP.minWeight = function (placements) { return placements.reduce(function (m, p) { return Math.min(m, p.weight || m); }, Infinity); };
+
   LP.svg2D = function (view, ctx) {
     var C = ctx.C, t = LP.t, U = LP.units;
     var d = dims(view, C);
@@ -51,6 +74,7 @@
     for (var gv = step; gv < d.V; gv += step) g.push('M0 ' + (d.V - gv) + 'H' + d.U);
     out.push('<path d="' + g.join('') + '" stroke="#94a3b8" stroke-opacity="0.35" stroke-width="0.6" vector-effect="non-scaling-stroke" fill="none"/>');
 
+    var maxW = ctx.colorBy === 'weight' ? LP.maxWeight(ctx.placements) : 0, minW = ctx.colorBy === 'weight' ? LP.minWeight(ctx.placements) : 0;
     var list = ctx.placements.filter(function (p) {
       if (ctx.hiddenSku && ctx.hiddenSku[p.sku]) return false;
       if (ctx.cut != null && ctx.cut < 1 && p.y >= C.L * ctx.cut) return false;
@@ -73,7 +97,7 @@
       }
       if (ctx.highlightFrom && (p.seq || 0) < ctx.highlightFrom) faint = true;   // already loaded in earlier steps
       var s = ctx.specs[p.sku] || {}, pr = project(view, p, C);
-      var col = s.color || '#888';
+      var col = ctx.colorBy && ctx.colorBy !== 'sku' ? LP.cargoColor(p, s, ctx.colorBy, maxW, minW) : (s.color || '#888');
       var bad = ctx.flags && ctx.flags[p.uid] && ctx.flags[p.uid].some(function (c) { return c !== 'heavyOnLight' && c !== 'deliveryBlocked'; });
       var sel = ctx.selected === p.uid;
       var stroke = sel ? '#facc15' : bad ? '#dc2626' : 'rgba(0,0,0,0.55)';

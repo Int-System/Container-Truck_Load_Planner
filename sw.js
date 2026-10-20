@@ -4,14 +4,14 @@
  * - Libraries / fonts (CDN): CACHE FIRST → available offline after the first visit.
  * Bump VERSION when files are added/removed so the precache list is refreshed.
  */
-var VERSION = 'lp-4.1.8';
+var VERSION = 'lp-4.2.0';
 var APP = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
   'src/engine/geometry.js', 'src/engine/constraints.js', 'src/engine/cog.js', 'src/engine/packer.js', 'src/engine/multi.js', 'src/engine/index.js',
   'src/utils/units.js', 'src/utils/i18n.js', 'src/utils/icons.js', 'src/utils/dom.js', 'src/utils/io.js',
   'src/data/presets.js', 'src/data/vehicles.js', 'src/store.js',
-  'src/components/viewer2d.js', 'src/components/vehicle3d.js', 'src/components/viewer3d.js', 'src/components/summary.js',
+  'src/components/viewer2d.js', 'src/components/vehicle3d.js', 'src/components/cargo3d.js', 'src/components/viewer3d.js', 'src/components/summary.js',
   'src/components/insights.js', 'src/components/containerSelect.js', 'src/components/cargoForm.js', 'src/components/skuLibrary.js',
   'src/components/shipment.js', 'src/components/checklist.js', 'src/components/tour.js', 'src/components/report.js', 'src/app.js',
   // user manual (opened from the ? button) — available offline too

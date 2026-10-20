@@ -17,7 +17,10 @@
     S.ui.cabColor = localStorage.getItem('lp.cabColor') || null;
     S.ui.logo = localStorage.getItem('lp.logo') || null;
   } catch (e) { /* ignore */ }
-  function vehicleOpts() { return { type: LP.vehicleType(S.state.container), show: S.ui.showVehicle, cabColor: S.ui.cabColor, logo: S.ui.logo }; }
+  function vehicleOpts() {
+    var sh = S.state.project.shipment || {};
+    return { type: LP.vehicleType(S.state.container), show: S.ui.showVehicle, cabColor: S.ui.cabColor, logo: S.ui.logo, containerNo: sh.containerNo || '' };
+  }
   function refreshVehicle() { if (v3d) v3d.setContainer(S.state.container, vehicleOpts()); }
 
   // ------------------------------------------------------------------ derived data
@@ -62,9 +65,21 @@
   }
   if (v3d) v3d.setAxes(S.ui.axes);
 
+  // Display menu → view style: 'flat' (default, as before) or 'real' (steel container shell)
+  S.ui.style = 'flat'; S.ui.person = true; S.ui.colorBy = 'sku'; S.ui.animate = true; S.ui.playSpeed = 1;
+  try {
+    if (localStorage.getItem('lp.style') === 'real') S.ui.style = 'real';
+    S.ui.person = localStorage.getItem('lp.person') !== '0';
+    S.ui.animate = localStorage.getItem('lp.animate') !== '0';
+    var cb0 = localStorage.getItem('lp.colorBy');
+    if (cb0 === 'weight' || cb0 === 'drop' || cb0 === 'fragile') S.ui.colorBy = cb0;
+  } catch (e) { /* defaults */ }
+  if (v3d) v3d.setStyle(S.ui.style, { person: S.ui.person });
+  function savePref(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+
   function filterCtx(d) {
     var ui = S.ui;
-    return { hiddenSku: ui.hiddenSku, layer: ui.layer, tiers: d.val.tiers, cut: ui.cut, step: ui.step };
+    return { hiddenSku: ui.hiddenSku, layer: ui.layer, tiers: d.val.tiers, cut: ui.cut, step: ui.step, colorBy: ui.colorBy };
   }
 
   function render2D(d) {
@@ -73,7 +88,7 @@
     var st = S.state, ui = S.ui;
     v2d.render(ui.view, {
       C: st.container, placements: st.placements, specs: d.specs, flags: d.val.flags, tiers: d.val.tiers,
-      selected: ui.selected, layer: ui.layer, hiddenSku: ui.hiddenSku, cut: ui.cut, step: ui.step, cog: d.stats.cog
+      selected: ui.selected, layer: ui.layer, hiddenSku: ui.hiddenSku, cut: ui.cut, step: ui.step, cog: d.stats.cog, colorBy: ui.colorBy
     });
   }
 
@@ -149,6 +164,14 @@
     $('#tLogoDel').disabled = !ui.logo;
     $('#tCut').value = ui.cut;
     renderAxesMenu();
+    $$('#tStyle [data-st]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-st') === S.ui.style); });
+    $('#tPersonRow').classList.toggle('hidden', S.ui.style !== 'real');
+    $('#tPerson').checked = !!S.ui.person;
+    $('#tAnim').checked = !!S.ui.animate;
+    $$('#tColorBy [data-cb]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-cb') === S.ui.colorBy); });
+    $$('#tSpeed [data-sp]').forEach(function (b) { b.classList.toggle('on', +b.getAttribute('data-sp') === S.ui.playSpeed); });
+    renderColorLegend(d);
+    $('#tStyleNote').classList.toggle('hidden', !(S.ui.style === 'real' && LP.vehicleType(st.container) !== 'container'));
     var lay = ['<option value="0">' + esc(t('allLayers')) + '</option>'];
     for (var i = 1; i <= d.maxTier; i++) lay.push('<option value="' + i + '">' + esc(t('layerN', { n: i })) + '</option>');
     $('#tLayer').innerHTML = lay.join('');
@@ -559,12 +582,16 @@
     var n = S.state.placements.length;
     if (!n) return;
     var step = S.ui.step == null || S.ui.step >= n ? 0 : S.ui.step;
-    var inc = Math.max(1, Math.ceil(n / 160));
+    var sp = S.ui.playSpeed || 1, anim = S.ui.animate && v3d && S.ui.view === '3d';
+    // animated: items slide in from the door one after another; otherwise the original quick reveal
+    var inc = anim ? Math.max(1, Math.ceil(n / 400)) : Math.max(1, Math.ceil(n / 160));
     playTimer = setInterval(function () {
+      var prev = step;
       step = Math.min(n, step + inc);
       S.uiChange({ step: step });
+      if (anim) v3d.animateIn(S.state.placements.filter(function (p) { return (p.seq || 0) > prev && (p.seq || 0) <= step; }).map(function (p) { return p.uid; }), 520 / sp);
       if (step >= n) { clearInterval(playTimer); playTimer = null; S.uiChange({ step: null }); }
-    }, 70);
+    }, anim ? 150 / sp : 70 / sp);
     S.uiChange({});
   }
 
@@ -619,6 +646,29 @@
     // full user manual (manual.html, built from docs/manual.md) — precached by the service worker, so it works offline
     var w = window.open('manual.html', '_blank');
     if (!w) location.href = 'manual.html';
+  }
+
+  /** Legend for the colour modes (hidden for the default "SKU" colours). */
+  function renderColorLegend(d) {
+    var el = $('#colorLegend'), mode = S.ui.colorBy, st = S.state;
+    if (!mode || mode === 'sku' || !st.placements.length) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+    var h = '';
+    if (mode === 'weight') {
+      var mx = LP.maxWeight(st.placements), mn = LP.minWeight(st.placements);
+      h = '<b>' + esc(t('colorWeight')) + '</b><div class="lg-grad"></div><div class="lg-ends"><span>' + U.fmt(mn, 1) + ' kg</span><span>' + U.fmt(mx, 1) + ' kg</span></div><small>' + esc(t('lgHeavyLow')) + '</small>';
+    } else if (mode === 'drop') {
+      var drops = {};
+      st.placements.forEach(function (p) { drops[+((d.specs[p.sku] || {}).dropOrder) || 1] = 1; });
+      h = '<b>' + esc(t('colorDrop')) + '</b>' + Object.keys(drops).map(Number).sort(function (a, b) { return a - b; }).map(function (k) {
+        return '<div class="lg-row"><span class="sw" style="background:' + LP.DROP_COLORS[(k - 1) % LP.DROP_COLORS.length] + '"></span>' + esc(t('lgDropN', { n: k })) + '</div>';
+      }).join('') + '<small>' + esc(t('lgDropHint')) + '</small>';
+    } else {
+      var nf = st.placements.filter(function (p) { return (d.specs[p.sku] || {}).fragile; }).length;
+      h = '<b>' + esc(t('colorFragile')) + '</b><div class="lg-row"><span class="sw" style="background:#e24b4a"></span>' + esc(t('lgFragileN', { n: nf })) + '</div>' +
+        '<div class="lg-row"><span class="sw" style="background:#d5dbe3"></span>' + esc(t('lgOthers')) + '</div>';
+    }
+    el.innerHTML = h;
+    el.classList.remove('hidden');
   }
 
   function cycleTheme() {
@@ -693,6 +743,32 @@
     S.ui.showVehicle = e.target.checked;
     try { localStorage.setItem('lp.vehicle', e.target.checked ? '1' : '0'); } catch (err) { /* ignore */ }
     if (v3d) v3d.setContainer(S.state.container, vehicleOpts());
+  });
+  $('#tStyle').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-st]');
+    if (!b) return;
+    S.ui.style = b.getAttribute('data-st');
+    try { localStorage.setItem('lp.style', S.ui.style); } catch (err) { /* ignore */ }
+    if (v3d) { v3d.setContainer(S.state.container, vehicleOpts()); v3d.setStyle(S.ui.style, { person: S.ui.person }); }
+    S.uiChange({});
+  });
+  $('#tPerson').addEventListener('change', function (e) {
+    S.ui.person = e.target.checked; savePref('lp.person', S.ui.person ? '1' : '0');
+    if (v3d) v3d.setStyle(S.ui.style, { person: S.ui.person });
+  });
+  $('#tAnim').addEventListener('change', function (e) { S.ui.animate = e.target.checked; savePref('lp.animate', S.ui.animate ? '1' : '0'); });
+  $('#tColorBy').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-cb]');
+    if (!b) return;
+    savePref('lp.colorBy', b.getAttribute('data-cb'));
+    S.uiChange({ colorBy: b.getAttribute('data-cb') });
+  });
+  $('#tSpeed').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-sp]');
+    if (!b) return;
+    S.ui.playSpeed = +b.getAttribute('data-sp');
+    if (playTimer) { togglePlay(); togglePlay(); }     // restart at the new speed from the current step
+    else S.uiChange({});
   });
   $('#axGizmo').addEventListener('change', function (e) { setAxes({ gizmo: e.target.checked }); });
   $('#axOrigin').addEventListener('change', function (e) { setAxes({ origin: e.target.checked }); });

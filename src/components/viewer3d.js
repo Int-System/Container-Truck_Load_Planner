@@ -103,13 +103,15 @@
     var ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
     var dummy = new THREE.Object3D(), tmpColor = new THREE.Color();
     var BAD = new THREE.Color(0xef4444), DONE = new THREE.Color(0xd3d9e1);
-    function freshInst() { return { box: null, cyl: null, pal: null, uids: { box: [], cyl: [] }, index: {}, edges: null, locks: null }; }
+    function freshInst() { return { box: null, cyl: null, pal: null, ld: null, lbl: null, uids: { box: [], cyl: [], ld: [] }, index: {}, edges: null, locks: null }; }
     var inst = freshInst(), stepMode = null, dragUid = null;
 
     var C = { W: 235, L: 590, H: 239 }, wallMats = [], data = null, manual = false, dirty = true;
     var vehicleG = new THREE.Group(), vehicle = { type: null, show: true }, vehicleExt = null, builtKey = null;
     scene.add(vehicleG);
     var opacity = 0.18;
+    var style = 'flat', vehicleWalls = null, showPerson = true;   // 'real' = steel container shell (shipping containers only)
+    function realShell() { return style === 'real' && vehicle.type === 'container'; }
 
     // ---- pointer handling (registered before OrbitControls so we can veto orbiting) ----
     var ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -121,12 +123,12 @@
     }
     function pick(e) {
       setNdc(e);
-      var list = [inst.box, inst.cyl].filter(Boolean);
+      var list = [inst.box, inst.cyl, inst.ld].filter(Boolean);
       var hits = ray.intersectObjects(list, false);
       for (var k = 0; k < hits.length; k++) {
         var hit = hits[k];
         if (hit.instanceId == null) continue;
-        var uid = (hit.object === inst.box ? inst.uids.box : inst.uids.cyl)[hit.instanceId];
+        var uid = (hit.object === inst.box ? inst.uids.box : hit.object === inst.ld ? inst.uids.ld : inst.uids.cyl)[hit.instanceId];
         if (uid && inst.index[uid] && inst.index[uid].visible) return { uid: uid, point: hit.point };
       }
       return null;
@@ -228,14 +230,15 @@
 
     function buildVehicle() {
       disposeGroup(vehicleG);
-      vehicleExt = null;
-      if (!vehicle.show || !vehicle.type || !LP.buildVehicle) return;
+      vehicleExt = null; vehicleWalls = null;
+      if (!(vehicle.show || realShell()) || !vehicle.type || !LP.buildVehicle) return;
       var v = LP.buildVehicle(THREE, C, vehicle.type, {
-        cabColor: vehicle.cabColor, logo: vehicle.logo,
+        cabColor: vehicle.cabColor, logo: vehicle.logo, real: realShell(),
         onAsset: function () { sun.shadow.needsUpdate = true; dirty = true; }
       });
       vehicleG.add(v.group);
       vehicleExt = v.ext;
+      vehicleWalls = v.walls || null;
       configureShadows();
     }
 
@@ -257,7 +260,12 @@
     function buildContainer() {
       disposeGroup(containerG);
       wallMats = [];
-      var L = C.L, W = C.W, H = C.H;
+      var L = C.L, W = C.W, H = C.H, real = realShell();
+      var flatG = new THREE.Group();          // the plain box (floor, grid, walls, doors); replaced by the steel shell
+      flatG.visible = !real;
+      containerG.add(flatG);
+      var containerG0 = containerG;
+      containerG = flatG;
       var floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshLambertMaterial({ color: 0x9aa4b2 }));
       floor.rotation.x = -Math.PI / 2;
       floor.position.y = -0.3;
@@ -312,6 +320,7 @@
       }
       if (H - DH > 0.5) lip(W, H - DH, DH + (H - DH) / 2, 0);
       if (W - DW > 0.5) [-1, 1].forEach(function (s) { lip((W - DW) / 2, DH, DH / 2, s * (DW / 2 + (W - DW) / 4)); });
+      containerG = containerG0;
       var sz = Math.max(W * 0.9, 120);
       var dl = textSprite(LP.t('doorHere'), '#ea580c', sz);
       dl.position.set(L / 2 + sz * 0.15, H + sz * 0.22, 0);
@@ -324,6 +333,13 @@
       containerG.add(ll);
       cogMarker.scale.setScalar(Math.max(W, L) * 0.008);
       buildVehicle();
+      if (style === 'real' && showPerson && LP.buildPerson) {
+        var tag = textSprite('1.70 ม.', '#334155', 130);
+        var person = LP.buildPerson(THREE, tag);
+        person.position.set(L / 2 + Math.max(90, W * 0.45), vehicleExt ? vehicleExt.yMin : 0, -(W / 2 + 55));
+        person.rotation.y = -0.9;
+        containerG.add(person);
+      }
       buildOrigin();
       buildRulers();
       refreshAxes();
@@ -335,6 +351,7 @@
     function frameBounds() {
       var b = { x0: -C.L / 2, x1: C.L / 2 + C.W * 0.4, y0: 0, y1: C.H * 1.08, z: C.W / 2 };   // + open door leaves / labels
       if (vehicleExt) { b.x0 = Math.min(b.x0, vehicleExt.xMin); b.x1 = Math.max(b.x1, vehicleExt.xMax); b.y0 = vehicleExt.yMin; b.y1 = Math.max(b.y1, vehicleExt.yMax); b.z = Math.max(b.z, vehicleExt.zMax); }
+      if (style === 'real' && showPerson) { b.x1 = Math.max(b.x1, C.L / 2 + Math.max(90, C.W * 0.45) + 45); b.z = Math.max(b.z, C.W / 2 + 85); b.y1 = Math.max(b.y1, (vehicleExt ? vehicleExt.yMin : 0) + 200); }
       return b;
     }
 
@@ -574,6 +591,18 @@
     });
     nav.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
 
+    /** Steel shell: hide the walls (and roof) between the camera and the cargo. */
+    function updateCutaway() {
+      if (!vehicleWalls) return;
+      var c = camera.position, m = 2;
+      vehicleWalls.left.visible = c.z < C.W / 2 + m;
+      vehicleWalls.right.visible = c.z > -C.W / 2 - m;
+      vehicleWalls.front.visible = c.x > -C.L / 2 - m;
+      vehicleWalls.roof.visible = c.y < C.H;
+      if (vehicleWalls.doorLeft) vehicleWalls.doorLeft.visible = vehicleWalls.left.visible;
+      if (vehicleWalls.doorRight) vehicleWalls.doorRight.visible = vehicleWalls.right.visible;
+    }
+
     function visibleFor(p, f) {
       if (f.hiddenSku && f.hiddenSku[p.sku]) return false;
       if (f.cut != null && f.cut < 1 && p.y >= C.L * f.cut) return false;
@@ -585,10 +614,23 @@
     function isBad(p) {
       return !!(data.flags && data.flags[p.uid] && data.flags[p.uid].some(function (c) { return c !== 'heavyOnLight' && c !== 'deliveryBlocked'; }));
     }
-    function colorOf(p) {
+    var WHITE = new THREE.Color(0xffffff), tmpLabel = new THREE.Color();
+    function modeColor(p, out) {
+      var f = (data && data.filter) || {};
+      return out.set(LP.cargoColor ? LP.cargoColor(p, data.specs[p.sku], f.colorBy, data.maxW, data.minW) : ((data.specs[p.sku] || {}).color || '#888888'));
+    }
+    /** Body colour. Realistic cartons / pallet loads keep their printed look (white tint) unless a colour mode is on. */
+    function colorOf(p, kind) {
       if (stepMode && (p.seq || 0) < stepMode.from) return DONE;
       if (isBad(p)) return BAD;
-      return tmpColor.set((data.specs[p.sku] || {}).color || '#888888');
+      var f = (data && data.filter) || {};
+      if (style === 'real' && kind !== 'cyl' && (!f.colorBy || f.colorBy === 'sku')) return WHITE;
+      return modeColor(p, tmpColor);
+    }
+    function labelColorOf(p) {
+      if (stepMode && (p.seq || 0) < stepMode.from) return DONE;
+      if (isBad(p)) return BAD;
+      return modeColor(p, tmpLabel);
     }
     function makeIM(geo, n, mat) {
       if (!n) return null;
@@ -599,15 +641,18 @@
       cargoG.add(im);
       return im;
     }
-    /** Write one item's matrix/colour (q = position/size to draw, may differ from p while dragging). */
+    var lblQ = new THREE.Quaternion(), lblY = new THREE.Vector3(0, 1, 0), lblS = new THREE.Vector3(), lblP = new THREE.Vector3(), lblM = new THREE.Matrix4();
+    /** Write one item's matrix/colour (q = position/size to draw, may differ from p while dragging or animating). */
     function writeInstance(e, q, vis, colorOverride) {
       var spec = data.specs[e.p.sku] || {};
-      if (vis) { placeMesh(dummy, q, spec); dummy.updateMatrix(); e.im.setMatrixAt(e.i, dummy.matrix); }
+      var bh = e.pal != null ? Math.min(15, q.h * 0.2) : 0;
+      var body = q;
+      if (e.pal != null && style === 'real') body = { x: q.x, y: q.y, z: q.z + bh, w: q.w, l: q.l, h: q.h - bh, ax: q.ax };   // load sits on the pallet
+      if (vis) { placeMesh(dummy, body, spec); dummy.updateMatrix(); e.im.setMatrixAt(e.i, dummy.matrix); }
       else e.im.setMatrixAt(e.i, ZERO);
-      e.im.setColorAt(e.i, colorOverride || colorOf(e.p));
+      e.im.setColorAt(e.i, colorOverride || colorOf(e.p, e.kind));
       if (e.pal != null) {
         if (vis) {
-          var bh = Math.min(15, q.h * 0.2);
           dummy.position.set(q.y + q.l / 2 - C.L / 2, q.z + bh / 2, C.W / 2 - q.x - q.w / 2);
           dummy.rotation.set(0, 0, 0);
           dummy.scale.set(q.l * 1.004, bh, q.w * 1.004);
@@ -615,9 +660,23 @@
           inst.pal.setMatrixAt(e.pal, dummy.matrix);
         } else inst.pal.setMatrixAt(e.pal, ZERO);
       }
+      if (e.lbl) {                         // SKU stickers on the door side and both long sides
+        var lc = colorOverride || labelColorOf(e.p);
+        var cx = q.y + q.l / 2 - C.L / 2, cy = q.z + q.h * 0.56, cz = C.W / 2 - q.x - q.w / 2;
+        var faces = [[q.l / 2 + 0.35, 0, Math.PI / 2, q.w], [0, q.w / 2 + 0.35, 0, q.l], [0, -q.w / 2 - 0.35, Math.PI, q.l]];
+        faces.forEach(function (fc, k) {
+          if (!vis) { inst.lbl.setMatrixAt(e.lbl + k, ZERO); return; }
+          var lh = Math.min(q.h * 0.36, fc[3] * 0.45 / 1.42, 26), lw = lh * 1.42;
+          lblP.set(cx + fc[0], cy, cz + fc[1]);
+          lblQ.setFromAxisAngle(lblY, fc[2]);
+          lblS.set(lw, lh, 1);
+          inst.lbl.setMatrixAt(e.lbl + k, lblM.compose(lblP, lblQ, lblS));
+          inst.lbl.setColorAt(e.lbl + k, lc);
+        });
+      }
     }
     function flushInstances() {
-      [inst.box, inst.cyl, inst.pal].forEach(function (im) {
+      [inst.box, inst.cyl, inst.pal, inst.ld, inst.lbl].forEach(function (im) {
         if (!im) return;
         im.instanceMatrix.needsUpdate = true;
         if (im.instanceColor) im.instanceColor.needsUpdate = true;
@@ -653,9 +712,10 @@
     function rebuildLines() {
       if (!data) return;
       var pos = [], lock = [];
+      edgeMat.opacity = style === 'real' ? 0.2 : 0.55;
       data.placements.forEach(function (p) {
         var e = inst.index[p.uid];
-        if (!e || !e.visible || p.uid === dragUid) return;
+        if (!e || !e.visible || p.uid === dragUid || animIn[p.uid]) return;
         var spec = data.specs[p.sku] || {};
         if (spec.pkg === 'cylinder' && (p.ax || 'z') === 'z') pushDrum(pos, p); else pushBox(pos, p, 0);
         if (p.locked) pushBox(lock, p, 0.8);
@@ -664,40 +724,88 @@
       inst.locks = setLines(inst.locks, lock, lockMat);
       dirty = true;
     }
+
+    // ---- loading animation: newly shown items slide in through the door, then settle (player ▶) ----
+    var animIn = {}, animCount = 0;
+    function animPos(p, a, now) {
+      var t = Math.min(1, (now - a.t0) / a.dur);
+      var DH = Math.min(C.doorH || C.H, C.H), carry = Math.max(0, Math.min(p.z + 8, DH - p.h - 2));
+      var sy = C.L + C.W * 0.55, sx = (C.W - p.w) / 2;
+      var q = { x: p.x, y: p.y, z: p.z, w: p.w, l: p.l, h: p.h, ax: p.ax };
+      if (t < 0.72) {
+        var k = t / 0.72, e2 = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        q.y = sy + (p.y - sy) * e2; q.x = sx + (p.x - sx) * e2; q.z = carry;
+      } else {
+        var k2 = (t - 0.72) / 0.28;
+        q.z = carry + (p.z - carry) * (1 - (1 - k2) * (1 - k2));
+      }
+      return { q: q, done: t >= 1 };
+    }
+    function stepAnimations() {
+      if (!animCount || !data) return;
+      var now = performance.now(), finished = false;
+      Object.keys(animIn).forEach(function (uid) {
+        var e = inst.index[uid], a = animIn[uid];
+        if (!e || !e.visible) { delete animIn[uid]; animCount--; finished = true; return; }
+        var r = animPos(e.p, a, now);
+        writeInstance(e, r.q, true);
+        if (r.done) { writeInstance(e, e.p, true); delete animIn[uid]; animCount--; finished = true; }
+      });
+      flushInstances();
+      if (finished) rebuildLines();
+    }
+
     /** Apply filters / step preview to every instance. */
     function applyState() {
       if (!data) return;
-      var f = data.filter || {};
+      var f = data.filter || {}, now = performance.now();
       data.placements.forEach(function (p) {
         var e = inst.index[p.uid];
         if (!e) return;
         e.visible = visibleFor(p, f) && (!stepMode || (p.seq || 0) <= stepMode.to);
-        writeInstance(e, p, e.visible);
+        if (animIn[p.uid] && e.visible) writeInstance(e, animPos(p, animIn[p.uid], now).q, true);
+        else writeInstance(e, p, e.visible);
       });
       flushInstances();
       rebuildLines();
     }
     function disposeCargo() {
-      [inst.box, inst.cyl, inst.pal].forEach(function (im) { if (im) { cargoG.remove(im); if (im.dispose) im.dispose(); } });
+      [inst.box, inst.cyl, inst.pal, inst.ld, inst.lbl].forEach(function (im) { if (im) { cargoG.remove(im); if (im.dispose) im.dispose(); } });
       [inst.edges, inst.locks].forEach(function (l) { if (l) { cargoG.remove(l); l.geometry.dispose(); } });
       inst = freshInst();
     }
 
     function rebuildCargo() {
       disposeCargo();
+      animIn = {}; animCount = 0;
       if (!data) return;
-      var boxes = [], drums = [], pallets = [];
+      var real = style === 'real' && !!LP.cargoAssets, A = real ? LP.cargoAssets(THREE) : null;
+      var f0 = data.filter || {}, solid = real && f0.colorBy && f0.colorBy !== 'sku';   // colour modes: plain painted boxes
+      data.solid = solid;
+      var boxes = [], drums = [], pallets = [], loads = [];
       data.placements.forEach(function (p) {
         var spec = data.specs[p.sku] || {};
-        (spec.pkg === 'cylinder' ? drums : boxes).push(p);
+        if (spec.pkg === 'cylinder') drums.push(p);
+        else if (real && spec.pkg === 'pallet') loads.push(p);
+        else boxes.push(p);
         if (spec.pkg === 'pallet') pallets.push(p);
       });
-      inst.box = makeIM(unitBox, boxes.length, cargoMat);
-      inst.cyl = makeIM(unitCyl, drums.length, cargoMat);
-      inst.pal = makeIM(unitBox, pallets.length, palletMat);
-      boxes.forEach(function (p, i) { inst.uids.box[i] = p.uid; inst.index[p.uid] = { im: inst.box, i: i, p: p }; });
-      drums.forEach(function (p, i) { inst.uids.cyl[i] = p.uid; inst.index[p.uid] = { im: inst.cyl, i: i, p: p }; });
+      data.maxW = LP.maxWeight ? LP.maxWeight(data.placements) : 0;
+      data.minW = LP.minWeight ? LP.minWeight(data.placements) : 0;
+      var big = data.placements.length > 1500;          // keep large jobs fast: no stickers / cargo shadows
+      inst.box = makeIM(real ? A.box : unitBox, boxes.length, real && !solid ? A.cartonMat : cargoMat);
+      inst.cyl = makeIM(real ? A.drum : unitCyl, drums.length, real ? A.drumMat : cargoMat);
+      inst.pal = makeIM(real ? A.pallet : unitBox, pallets.length, real ? A.palletMat : palletMat);
+      inst.ld = makeIM(A ? A.box : unitBox, loads.length, A && !solid ? A.loadMat : cargoMat);
+      var stickers = real && !big && !solid ? boxes.filter(function (p) { var s = data.specs[p.sku] || {}; return s.pkg !== 'pallet'; }) : [];
+      inst.lbl = makeIM(A ? A.label : unitBox, stickers.length * 3, A ? A.labelMat : cargoMat);
+      if (inst.lbl) inst.lbl.castShadow = false;
+      [inst.box, inst.cyl, inst.pal, inst.ld].forEach(function (im) { if (im) { im.receiveShadow = real || realShell(); im.castShadow = !big; } });
+      boxes.forEach(function (p, i) { inst.uids.box[i] = p.uid; inst.index[p.uid] = { im: inst.box, i: i, p: p, kind: 'box' }; });
+      drums.forEach(function (p, i) { inst.uids.cyl[i] = p.uid; inst.index[p.uid] = { im: inst.cyl, i: i, p: p, kind: 'cyl' }; });
+      loads.forEach(function (p, i) { inst.uids.ld[i] = p.uid; inst.index[p.uid] = { im: inst.ld, i: i, p: p, kind: 'ld' }; });
       pallets.forEach(function (p, i) { inst.index[p.uid].pal = i; });
+      stickers.forEach(function (p, i) { inst.index[p.uid].lbl = i * 3; });
       applyState();
       updateSel(data.selected);
       if (data.cog && data.placements.length) {
@@ -725,8 +833,10 @@
 
     (function loop() {
       requestAnimationFrame(loop);
+      if (animCount) stepAnimations();
       if (!dirty) return;
       dirty = false;
+      updateCutaway();
       renderer.render(scene, camera);
       updateHud();
       updateNav();
@@ -739,17 +849,36 @@
     return {
       /** Rebuilds the container (and vehicle) only when size, vehicle or language changed. */
       setContainer: function (c, veh) {
-        if (veh) { vehicle.type = veh.type; vehicle.show = veh.show; vehicle.cabColor = veh.cabColor || null; vehicle.logo = veh.logo || null; }
-        var key = [c.W, c.L, c.H, vehicle.type, vehicle.show, LP.i18n.lang, c.doorW, c.doorH, vehicle.cabColor, vehicle.logo ? vehicle.logo.length + vehicle.logo.slice(-24) : ''].join('|');
+        if (veh) { vehicle.type = veh.type; vehicle.show = veh.show; vehicle.cabColor = veh.cabColor || null; vehicle.logo = veh.logo || null; vehicle.containerNo = veh.containerNo || ''; }
+        var key = [c.W, c.L, c.H, vehicle.type, vehicle.show, LP.i18n.lang, c.doorW, c.doorH, vehicle.cabColor, vehicle.logo ? vehicle.logo.length + vehicle.logo.slice(-24) : '',
+          style, vehicle.containerNo, c.tare, c.maxGross].join('|');
         if (key === builtKey) return;
         var sizeChanged = !(c.W === C.W && c.L === C.L && c.H === C.H) || !builtKey;
         var vehChanged = builtKey && builtKey.split('|').slice(3, 5).join('|') !== [vehicle.type, vehicle.show].join('|');
         builtKey = key;
-        C = { W: c.W, L: c.L, H: c.H, doorW: c.doorW, doorH: c.doorH };
+        C = { W: c.W, L: c.L, H: c.H, doorW: c.doorW, doorH: c.doorH, tare: c.tare, maxGross: c.maxGross, containerNo: vehicle.containerNo };
         buildContainer();
         if (sizeChanged || vehChanged) resetCamera();
       },
       relabel: function () { builtKey = null; buildContainer(); },
+      /** 'flat' (default) or 'real' (steel container shell, shadows; shipping containers only). */
+      setStyle: function (v, opts) {
+        v = v === 'real' ? 'real' : 'flat';
+        var person = !opts || opts.person !== false;
+        if (v === style && person === showPerson) return;
+        style = v; showPerson = person; builtKey = null; buildContainer(); configureShadows();
+        rebuildCargo();
+      },
+      /** Slide the given items in through the door (loading animation); dur in ms. */
+      animateIn: function (uids, dur) {
+        var now = performance.now();
+        (uids || []).forEach(function (uid, k) {
+          if (!inst.index[uid]) return;
+          if (!animIn[uid]) animCount++;
+          animIn[uid] = { t0: now + k * 25, dur: dur || 500 };
+        });
+        if (animCount) { applyState(); dirty = true; }
+      },
       setData: function (d) {
         data = d;
         data.byUid = {};
@@ -758,7 +887,9 @@
       },
       setFilter: function (f) {
         if (!data) return;
+        var wasSolid = !!data.solid;
         data.filter = f;
+        if (style === 'real' && wasSolid !== !!(f && f.colorBy && f.colorBy !== 'sku')) { rebuildCargo(); return; }
         applyState();
       },
       setSelected: function (uid) { if (data) { data.selected = uid; updateSel(uid); dirty = true; } },
@@ -830,6 +961,7 @@
         renderer.setSize(1600, 900, false);
         camera.aspect = 1600 / 900;
         resetCamera();
+        updateCutaway();
         scene.background = new THREE.Color('#ffffff');
         selBox.visible = false;
         renderer.render(scene, camera);
@@ -842,6 +974,7 @@
         controls.target.copy(tgt);
         camera.updateProjectionMatrix();
         controls.update();
+        updateCutaway();
         dirty = true;
         return url;
       }

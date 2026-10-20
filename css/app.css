@@ -308,6 +308,21 @@ a.ib.hl-ib { display: grid; place-items: center; font-weight: 700; font-size: 14
 .ax-sub label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--fg2); }
 .ax-sub select { width: auto; padding: 2px 6px; }
 #axOff { align-self: flex-end; margin-top: 4px; }
+.style-row { display: flex; flex-direction: column; gap: 6px; }
+.style-row .seg { display: flex; }
+.style-row .seg button { flex: 1; justify-content: center; }
+.style-row small { font-size: 11.5px; }
+#tColorBy button { padding: 5px 4px; font-size: 12.5px; }
+.seg.speed { padding: 2px; margin-left: 2px; }
+.seg.speed button { padding: 3px 7px; font-size: 12px; }
+.ov.ov-lg { top: 64px; right: 10px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 10px; font-size: 12px; color: var(--fg2); background: var(--glass); border: 1px solid var(--glass-line); border-radius: 10px; box-shadow: var(--shadow); min-width: 150px; max-width: 220px; backdrop-filter: blur(10px); }
+.ov-lg b { color: var(--fg); font-size: 12.5px; }
+.ov-lg small { color: var(--muted); font-size: 11px; }
+.ov-lg .lg-grad { height: 10px; border-radius: 5px; background: linear-gradient(90deg, #fde9c4, #efa33d, #a32d2d); }
+.ov-lg .lg-ends { display: flex; justify-content: space-between; font-size: 11px; }
+.ov-lg .lg-row { display: flex; align-items: center; gap: 6px; }
+.ov-lg .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+@media (max-width: 760px) { .ov.ov-lg { top: auto; bottom: 62px; right: auto; left: 10px; } }
 #displayPanel { max-height: min(78vh, calc(100vh - 140px)); overflow: auto; width: 300px; }
 .sel-pos.axes label span.k { font-weight: 700; }
 .sel-pos.axes label small { display: block; font-size: 10.5px; font-weight: 500; color: var(--muted); }
