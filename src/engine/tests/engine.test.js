@@ -288,6 +288,35 @@
     return row.placed + ' placed, ' + row.containersNeeded + ' unit';
   });
 
+  // ---- Securing material (dunnage) ---------------------------------------------------------
+  test('Dunnage: door void → timber bars, 20 cm row gap → airbags, wide side void → warning', function () {
+    var C = { W: 235, L: 590, H: 239 };
+    function row(y, x0, w, h, n) { var out = []; for (var i = 0; i < n; i++) out.push({ uid: 'r' + y + '_' + i, sku: 'A', x: x0 + i * w, y: y, z: 0, w: w, l: 100, h: h, weight: 50 }); return out; }
+    var ps = row(0, 0, 117.5, 200, 2).concat(row(120, 0, 117.5, 180, 2));   // 20 cm gap between rows, door void 370 cm
+    var r = E.dunnagePlan(C, ps, {}, {});
+    var door = r.gaps.filter(function (g) { return g.type === 'door'; })[0];
+    var trans = r.gaps.filter(function (g) { return g.type === 'trans'; })[0];
+    assert(door && door.solution === 'timber' && door.len === 235 && door.qty >= 2, 'door bracing ' + JSON.stringify(door));
+    assert(trans && trans.solution === 'bag' && Math.abs(trans.t - 20) < 1 && trans.qty >= 1, 'row gap airbags ' + JSON.stringify(trans));
+    assert(trans.bag[1] <= 190, 'airbag taller than the lower row (180 cm): ' + trans.bag);
+    var narrow = row(0, 0, 90, 150, 2).concat(row(100, 0, 90, 150, 2));   // 55 cm side void along both rows
+    var r2 = E.dunnagePlan(C, narrow, {}, {});
+    var side = r2.gaps.filter(function (g) { return g.type === 'side'; })[0];
+    assert(side && side.solution === 'timber' && r2.warnings.some(function (w) { return w.code === 'dnWide'; }), 'wide side void not flagged');
+    assert(r.totalWeight > 0 && r.items.length >= 2, 'bill of materials empty');
+    assert(JSON.stringify(E.parseBagSizes('120x180, 90×120;bad')) === '[[90,120],[120,180]]', 'bag size parsing');
+    return r.items.map(function (it) { return it.kind + ' ×' + it.qty; }).join(', ') + ' · ' + r.totalWeight.toFixed(1) + ' kg';
+  });
+
+  test('Dunnage: a tight full load needs no airbags inside', function () {
+    var C = { W: 235, L: 590, H: 239 };
+    var r0 = E.pack(C, [sku({ qty: 600, maxMode: true })], { timeLimit: 400, seed: 7 });
+    var r = E.dunnagePlan(C, r0.placements, {}, {});
+    var inner = r.gaps.filter(function (g) { return g.type === 'trans' && g.t > 5; });
+    assert(inner.length === 0, 'unexpected row gaps ' + JSON.stringify(inner.map(function (g) { return g.t; })));
+    return r.gaps.length + ' void(s): ' + r.gaps.map(function (g) { return g.type + ' ' + Math.round(g.t); }).join(', ');
+  });
+
   // ---- Door opening ----------------------------------------------------------------------
   test('Door: items taller than the door are refused (fixed) or laid down (rotatable)', function () {
     var C = { W: 235, L: 590, H: 239, maxPayload: 28000, doorW: 234, doorH: 228 };

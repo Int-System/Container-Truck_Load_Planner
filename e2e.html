@@ -393,6 +393,33 @@
     return 'real style, 3 colour modes, playback at 4× (step ' + mid + ')';
   });
 
+  test('Securing material: list, show in 3D, settings, VGM weight', async function () {
+    await W.LPApp.loadSample('drums', true);
+    await idle();
+    click('[data-tab="summary"]');
+    await until(function () { return $('#summary .dun-row'); }, 5000, 'securing-material list');
+    var rows = $$('#summary .dun-row');
+    assert(rows.length >= 2 && /ถุงลม|Airbag/.test(rows[0].textContent), 'expected airbag + timber rows, got ' + rows.length);
+    rows[0].click();
+    await wait(150);
+    assert(S().ui.showDunnage === true && need('#tDun').checked, 'clicking a row did not switch the 3D securing material on');
+    need('#summary [data-dun-vgm]').click();
+    await wait(150);
+    var kg = Math.round(W.LPApp.derived().dunnage.totalWeight);
+    assert(+S().state.project.shipment.dunnage === kg && kg > 0, 'VGM dunnage weight not set (' + S().state.project.shipment.dunnage + ')');
+    need('#summary [data-dun-cfg]').click();
+    var dlg = await until(function () { return $('.modal-bg #dc_bagMaxGap'); }, 3000, 'settings dialog');
+    dlg.value = '8';                       // airbags only up to 8 cm → the 10 cm side void becomes timber
+    $('.modal-bg [data-ok]').click();
+    await wait(200);
+    var plan = W.LPApp.derived().dunnage;
+    assert(S().state.settings.dunnage && plan.gaps.every(function (g) { return g.solution === 'timber'; }), 'settings not applied');
+    S().change(function (s) { delete s.settings.dunnage; s.project.shipment = {}; }, { history: false });
+    need('#tDun').click();
+    noErrors();
+    return plan.items.map(function (it) { return it.kind + ' ×' + it.qty; }).join(', ') + ' · VGM +' + kg + ' kg';
+  });
+
   test('Tablet 768×1024 and phone 375×812: nothing overflows sideways', async function () {
     var res = [];
     for (var vp of [[768, 1024], [375, 812]]) {

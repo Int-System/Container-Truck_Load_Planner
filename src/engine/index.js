@@ -15,7 +15,7 @@
   if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
     module.exports = buildEngine([].concat(
       require('./geometry.js'), require('./constraints.js'), require('./cog.js'),
-      require('./packer.js'), require('./multi.js')));
+      require('./packer.js'), require('./multi.js'), require('./dunnage.js')));
     return;
   }
 

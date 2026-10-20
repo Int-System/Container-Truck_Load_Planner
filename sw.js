@@ -4,11 +4,11 @@
  * - Libraries / fonts (CDN): CACHE FIRST → available offline after the first visit.
  * Bump VERSION when files are added/removed so the precache list is refreshed.
  */
-var VERSION = 'lp-4.2.0';
+var VERSION = 'lp-4.2.1';
 var APP = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
-  'src/engine/geometry.js', 'src/engine/constraints.js', 'src/engine/cog.js', 'src/engine/packer.js', 'src/engine/multi.js', 'src/engine/index.js',
+  'src/engine/geometry.js', 'src/engine/constraints.js', 'src/engine/cog.js', 'src/engine/packer.js', 'src/engine/multi.js', 'src/engine/dunnage.js', 'src/engine/index.js',
   'src/utils/units.js', 'src/utils/i18n.js', 'src/utils/icons.js', 'src/utils/dom.js', 'src/utils/io.js',
   'src/data/presets.js', 'src/data/vehicles.js', 'src/store.js',
   'src/components/viewer2d.js', 'src/components/vehicle3d.js', 'src/components/cargo3d.js', 'src/components/viewer3d.js', 'src/components/summary.js',

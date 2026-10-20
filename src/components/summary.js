@@ -87,6 +87,35 @@
     return '<div class="split"><span class="sl">' + esc(la) + ' ' + a.toFixed(0) + '%</span><div class="split-bar"><span style="width:' + a.toFixed(1) + '%"></span></div><span class="sr">' + b.toFixed(0) + '% ' + esc(lb) + '</span></div>';
   }
 
+  /** Name / place texts for securing material (shared by the summary, the report and the step sheets). */
+  LP.dunnageItemName = function (it) {
+    return it.kind === 'bag' ? LP.t('dunBag', { s: it.size[0] + '×' + it.size[1] }) : LP.t('dunTimber', { len: LP.units.fmt(it.len, 0) });
+  };
+  LP.dunnageGapText = function (g) {
+    var U = LP.units, t = LP.t, f = function (v) { return U.fmt(v, 0); };
+    if (g.type === 'door') return t('dunAtDoor', { t: f(g.t) });
+    if (g.type === 'trans') return t('dunBetweenRows', { y: f(g.y0), t: f(g.t) });
+    if (g.type === 'side') return t('dunSide', { side: t(g.x0 < 1 ? 'left' : 'right'), a: f(g.y0), b: f(g.y1), t: f(g.t) });
+    return t('dunInner', { a: f(g.y0), b: f(g.y1), t: f(g.t) });
+  };
+  LP.dunnageSection = function (plan, hasVgm) {
+    var t = LP.t, U = LP.units, esc = LP.esc, I = LP.icon, byId = {};
+    plan.gaps.forEach(function (g) { byId[g.id] = g; });
+    var rows = plan.items.map(function (it) {
+      var where = it.gaps.map(function (id) { return LP.dunnageGapText(byId[id]); });
+      return '<div class="dun-row" data-dun-gaps="' + esc(it.gaps.join(',')) + '" title="' + esc(t('dunShowHint')) + '"><span class="dun-ic ' + it.kind + '">' + I(it.kind === 'bag' ? 'layers' : 'grid') + '</span>' +
+        '<div class="dun-t"><b>' + esc(LP.dunnageItemName(it)) + '</b><small>' + esc(where.join(' · ')) + '</small></div>' +
+        '<span class="dun-q">' + it.qty + ' ' + esc(t(it.kind === 'bag' ? 'dunUnitBag' : 'dunUnitTimber')) + '</span></div>';
+    }).join('');
+    var warn = plan.warnings.length ? '<div class="dun-warn">' + I('alert') + esc(t('w_dunWide', { t: Math.max.apply(null, plan.warnings.map(function (w) { return w.params.t; })) })) + '</div>' : '';
+    return '<div class="dun">' + rows + warn +
+      '<div class="dun-foot"><span>' + esc(t('dunTotal', { kg: U.fmt(plan.totalWeight, 1) })) + '</span><span class="dun-btns">' +
+      '<button class="btn sm" data-dun-show>' + I('eye') + t('dunShow3d') + '</button>' +
+      (hasVgm ? '<button class="btn sm" data-dun-vgm>' + I('scale') + t('dunToVgm') + '</button>' : '') +
+      '<button class="btn sm ghost" data-dun-cfg title="' + esc(t('dunSettings')) + '">' + I('sliders') + '</button></span></div>' +
+      '<div class="muted small">' + esc(t('dunNote')) + '</div></div>';
+  };
+
   LP.renderSummary = function (el, d) {
     var t = LP.t, U = LP.units, st = d.stats, C = d.C, I = LP.icon;
     var totalReq = 0, anyMax = false;
@@ -128,6 +157,7 @@
       split(st.leftPct, st.rightPct, t('left'), t('right')) + split(st.frontPct, st.rearPct, t('front'), t('rear')) + '</div>');
 
     if (d.vgm) h.push('<h3>' + I('scale') + t('vgmTitle') + '</h3>' + LP.vgmSection(d.vgm, d.ship || {}));
+    if (d.dunnage && d.dunnage.gaps.length && st.count) h.push('<h3>' + I('layers') + t('dunTitle') + '</h3>' + LP.dunnageSection(d.dunnage, !!d.vgm));
     if (d.axle && d.axleCfg) h.push('<h3>' + I('scale') + t('axleLoads') + ' · ' + esc(t('veh_' + d.axleCfg.type)) + '</h3>' + axleSection(d.axle, d.axleCfg, C));
 
     h.push('<h3>' + I('list') + t('perSku') + '</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>' + t('sku') + '</th><th class="n">' + t('requested') + '</th><th class="n">' + t('placed') + '</th><th class="n">' + t('unplaced') + '</th><th class="n">' + t('kg') + '</th></tr></thead><tbody>');

@@ -35,7 +35,8 @@
     var axleCfg = LP.axleConfig(C), axle = axleCfg ? E.axleLoads(C, st.placements, axleCfg) : null;
     var ship = st.project.shipment || {};
     var vgm = (LP.isBoxContainer && LP.isBoxContainer(C)) ? E.vgm(C, st.placements, ship.dunnage) : null;
-    return { v: S.version, specs: specs, val: val, stats: stats, maxTier: maxTier, axle: axle, axleCfg: axleCfg, vgm: vgm, ship: ship };
+    var dunnage = E.dunnagePlan ? E.dunnagePlan(C, st.placements, specs, st.settings.dunnage) : null;
+    return { v: S.version, specs: specs, val: val, stats: stats, maxTier: maxTier, axle: axle, axleCfg: axleCfg, vgm: vgm, ship: ship, dunnage: dunnage };
   }
   function derived() { if (cache.v !== S.version) cache = compute(); return cache; }
 
@@ -66,11 +67,12 @@
   if (v3d) v3d.setAxes(S.ui.axes);
 
   // Display menu → view style: 'flat' (default, as before) or 'real' (steel container shell)
-  S.ui.style = 'flat'; S.ui.person = true; S.ui.colorBy = 'sku'; S.ui.animate = true; S.ui.playSpeed = 1;
+  S.ui.style = 'flat'; S.ui.person = true; S.ui.colorBy = 'sku'; S.ui.animate = true; S.ui.playSpeed = 1; S.ui.showDunnage = false;
   try {
     if (localStorage.getItem('lp.style') === 'real') S.ui.style = 'real';
     S.ui.person = localStorage.getItem('lp.person') !== '0';
     S.ui.animate = localStorage.getItem('lp.animate') !== '0';
+    S.ui.showDunnage = localStorage.getItem('lp.dunnage') === '1';
     var cb0 = localStorage.getItem('lp.colorBy');
     if (cb0 === 'weight' || cb0 === 'drop' || cb0 === 'fragile') S.ui.colorBy = cb0;
   } catch (e) { /* defaults */ }
@@ -112,7 +114,7 @@
       LP.renderSummary($('#summary'), {
         C: st.container, stats: d.stats, issues: d.val.issues, banner: banner, axle: d.axle, axleCfg: d.axleCfg, vgm: d.vgm, ship: d.ship,
         runWarnings: st.lastRun ? (st.lastRun.warnings || []).filter(function (w) { return w.code !== 'unplaced' && w.code !== 'overweight'; }) : [],
-        lastRun: st.lastRun, suggestion: ui.suggestion
+        lastRun: st.lastRun, suggestion: ui.suggestion, dunnage: d.dunnage
       });
     } else if (ui.tab === 'steps') {
       LP.renderSteps($('#steps'), { placements: st.placements, specs: d.specs, step: ui.step, playing: !!playTimer, L: st.container.L });
@@ -168,6 +170,7 @@
     $('#tPersonRow').classList.toggle('hidden', S.ui.style !== 'real');
     $('#tPerson').checked = !!S.ui.person;
     $('#tAnim').checked = !!S.ui.animate;
+    $('#tDun').checked = !!S.ui.showDunnage;
     $$('#tColorBy [data-cb]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-cb') === S.ui.colorBy); });
     $$('#tSpeed [data-sp]').forEach(function (b) { b.classList.toggle('on', +b.getAttribute('data-sp') === S.ui.playSpeed); });
     renderColorLegend(d);
@@ -251,6 +254,7 @@
     if (v3d) {
       v3d.setContainer(st.container, vehicleOpts());
       v3d.setData({ placements: st.placements, specs: d.specs, flags: d.val.flags, selected: S.ui.selected, cog: d.stats.cog, filter: filterCtx(d) });
+      v3d.setDunnage(d.dunnage, S.ui.showDunnage);
       v3d.setOpacity(S.ui.opacity);
       v3d.setManual(S.ui.mode === 'manual');
     }
@@ -628,7 +632,7 @@
       LP.openReport({
         C: st.container, placements: st.placements, specs: d.specs, flags: d.val.flags, tiers: d.val.tiers, stats: d.stats,
         issues: d.val.issues.concat(d.axle ? d.axle.warnings : []).concat(d.vgm ? d.vgm.warnings : []), axle: d.axle, axleCfg: d.axleCfg, vgm: d.vgm, ship: d.ship, runWarnings: st.lastRun ? (st.lastRun.warnings || []).filter(function (w) { return w.code !== 'unplaced'; }) : [],
-        image3d: v3d ? v3d.snapshot() : null
+        image3d: v3d ? v3d.snapshot() : null, dunnage: d.dunnage
       });
     } else if (kind === 'dn') {
       LP.openDeliveryNote();
@@ -636,7 +640,7 @@
       if (!st.placements.length || !v3d) { LP.toast(t('noSteps'), 'bad'); return; }
       var steps = LP.buildSteps(st.placements, st.container.L);
       var images = steps.map(function (g) { return v3d.snapshotStep(g.from, g.to); });
-      LP.openStepSheets({ C: st.container, placements: st.placements, specs: d.specs, steps: steps, images: images, project: st.project.name });
+      LP.openStepSheets({ C: st.container, placements: st.placements, specs: d.specs, steps: steps, images: images, project: st.project.name, dunnage: d.dunnage });
     } else if (kind === 'xlsx') { if (!LP.io.exportXLSX(st, d.stats)) LP.toast('SheetJS offline → CSV', ''); }
     else if (kind === 'csv') LP.io.exportPlacementsCSV(st);
     else if (kind === 'cargo') LP.io.exportCargoCSV(st);
@@ -646,6 +650,30 @@
     // full user manual (manual.html, built from docs/manual.md) — precached by the service worker, so it works offline
     var w = window.open('manual.html', '_blank');
     if (!w) location.href = 'manual.html';
+  }
+
+  /** Securing-material settings (void limits, airbag sizes, bar spacing) — stored with the project settings. */
+  function openDunnageSettings() {
+    var D = E.DUNNAGE_DEFAULTS, c = Object.assign({}, S.state.settings.dunnage || {});
+    var val = function (k) { return c[k] != null ? c[k] : (k === 'bagSizes' ? D.bagSizes.map(function (b) { return b.join('×'); }).join(', ') : D[k]); };
+    var fld = function (k, label, type) { return '<label class="fld"><span>' + esc(t(label)) + '</span><input id="dc_' + k + '" type="' + (type || 'number') + '" value="' + esc(String(val(k))) + '"></label>'; };
+    LP.modal({
+      title: t('dunSettings'), okText: t('apply'), help: 'results',
+      body: '<div class="grid3">' + fld('minGap', 'dunMinGap') + fld('bagMaxGap', 'dunBagMax') + fld('timberSpacing', 'dunSpacing') + '</div>' +
+        fld('bagSizes', 'dunBagSizes', 'text') + '<div class="muted small">' + esc(t('dunSettingsNote')) + '</div>' +
+        '<div class="row" style="margin-top:8px"><button class="btn sm ghost" id="dcReset">' + esc(t('dunReset')) + '</button></div>',
+      onOpen: function (m, close) {
+        m.querySelector('#dcReset').onclick = function () { S.change(function (s) { delete s.settings.dunnage; }, { history: false }); close(); };
+      },
+      onOk: function (m) {
+        var g = function (k) { return m.querySelector('#dc_' + k).value; };
+        var sizes = E.parseBagSizes(g('bagSizes'));
+        if (!sizes.length) { LP.toast(t('dunBagSizesBad'), 'bad'); return false; }
+        S.change(function (s) {
+          s.settings.dunnage = { minGap: +g('minGap') || D.minGap, bagMaxGap: +g('bagMaxGap') || D.bagMaxGap, timberSpacing: +g('timberSpacing') || D.timberSpacing, bagSizes: sizes.map(function (b) { return b.join('×'); }).join(', ') };
+        }, { history: false });
+      }
+    });
   }
 
   /** Legend for the colour modes (hidden for the default "SKU" colours). */
@@ -757,6 +785,12 @@
     if (v3d) v3d.setStyle(S.ui.style, { person: S.ui.person });
   });
   $('#tAnim').addEventListener('change', function (e) { S.ui.animate = e.target.checked; savePref('lp.animate', S.ui.animate ? '1' : '0'); });
+  function setShowDunnage(on) {
+    S.ui.showDunnage = on; savePref('lp.dunnage', on ? '1' : '0');
+    if (v3d) v3d.setDunnage(derived().dunnage, on);
+    S.uiChange({});
+  }
+  $('#tDun').addEventListener('change', function (e) { setShowDunnage(e.target.checked); });
   $('#tColorBy').addEventListener('click', function (e) {
     var b = e.target.closest('[data-cb]');
     if (!b) return;
@@ -839,6 +873,20 @@
     if (e.target.closest('[data-goto-multi]')) { S.ui.tab = 'multi'; renderInsights(derived()); return; }
     if (e.target.closest('[data-ship-edit]')) { LP.openShipment(); return; }
     if (e.target.closest('[data-dn]')) { LP.openDeliveryNote(); return; }
+    var dunRow = e.target.closest('[data-dun-gaps]');
+    if (dunRow || e.target.closest('[data-dun-show]')) {
+      if (S.ui.view !== '3d') S.uiChange({ view: '3d' });
+      if (!S.ui.showDunnage) setShowDunnage(true);
+      if (dunRow && v3d) v3d.highlightDunnage(dunRow.getAttribute('data-dun-gaps').split(','));
+      return;
+    }
+    if (e.target.closest('[data-dun-vgm]')) {
+      var dw = Math.round(derived().dunnage.totalWeight);
+      S.change(function (s) { s.project.shipment = Object.assign({}, s.project.shipment, { dunnage: dw }); }, { history: false });
+      LP.toast(t('dunVgmSet', { kg: dw }), 'ok');
+      return;
+    }
+    if (e.target.closest('[data-dun-cfg]')) { openDunnageSettings(); return; }
     if (e.target.closest('[data-checklist]')) { LP.openChecklist(); return; }
     if (e.target.closest('[data-stepsheet]')) { exportAs('steps'); return; }
     var stp = e.target.closest('[data-to]');

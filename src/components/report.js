@@ -25,6 +25,19 @@
       '<table><tr><th style="width:32%">' + t('shipSignatory') + '</th><td style="height:46px">' + esc(sh.signatory || '') + '</td></tr><tr><th>' + t('shipDate') + '</th><td>' + esc(sh.vgmDate || '') + '</td></tr></table>';
   }
 
+  /** Securing material table (report) — rows = bill of materials with where each piece goes. */
+  function dunnageBlock(plan) {
+    var t = LP.t, U = LP.units, esc = LP.esc, byId = {};
+    if (!plan || !plan.gaps.length) return '';
+    plan.gaps.forEach(function (g) { byId[g.id] = g; });
+    return '<h2>' + t('dunTitle') + '</h2><table><tr><th>' + t('name') + '</th><th class="n">' + t('qty') + '</th><th>' + t('dunWhere') + '</th><th class="n">kg</th></tr>' +
+      plan.items.map(function (it) {
+        return '<tr><td>' + esc(LP.dunnageItemName(it)) + '</td><td class="n">' + it.qty + '</td><td>' + esc(it.gaps.map(function (id) { return LP.dunnageGapText(byId[id]); }).join(' · ')) + '</td><td class="n">' + U.fmt(it.weight, 1) + '</td></tr>';
+      }).join('') + '<tr><td><b>' + t('total') + '</b></td><td></td><td></td><td class="n"><b>' + U.fmt(plan.totalWeight, 1) + '</b></td></tr></table>' +
+      plan.warnings.slice(0, 1).map(function (w) { return '<p class="warning">' + esc(t('w_dunWide', w.params)) + '</p>'; }).join('') +
+      '<p style="color:#666">' + esc(t('dunNote')) + '</p>';
+  }
+
   LP.openReport = function (d) {
     var t = LP.t, U = LP.units, esc = LP.esc, st = d.stats, C = d.C, S = LP.store.state;
     var w = root.open('', '_blank');
@@ -49,7 +62,7 @@
       '<div>' + t('floorUtil') + '<b>' + U.fmt(st.floorUtil, 1) + '%</b>' + t('usedLength') + ' ' + U.fmt(st.usedLength, 0) + ' cm</div></div>' +
       '<h2>' + t('cog') + '</h2><div>x ' + U.fmt(st.cog.x, 0) + ' cm · y ' + U.fmt(st.cog.y, 0) + ' cm · z ' + U.fmt(st.cog.z, 0) + ' cm — ' +
       t('leftRight') + ' ' + U.fmt(st.leftPct, 0) + '% / ' + U.fmt(st.rightPct, 0) + '% · ' + t('frontRear') + ' ' + U.fmt(st.frontPct, 0) + '% / ' + U.fmt(st.rearPct, 0) + '%</div>' +
-      (d.vgm ? vgmBlock(d) : '') +
+      (d.vgm ? vgmBlock(d) : '') + dunnageBlock(d.dunnage) +
       (d.axle ? '<h2>' + t('axleLoads') + ' — ' + esc(t('veh_' + d.axleCfg.type)) + '</h2><table><tr><th>' + t('axleGroup') + '</th><th class="n">' + t('axlePos') + '</th><th class="n">kg</th><th class="n">' + t('axleLimit') + '</th><th class="n">%</th></tr>' +
         d.axle.groups.map(function (g) {
           return '<tr><td>' + esc(t('ax_' + g.key)) + (g.n > 1 ? ' ×' + g.n : '') + '</td><td class="n">' + U.fmt(g.y, 0) + '</td><td class="n">' + U.fmt(g.load, 0) + '</td><td class="n">' + U.fmt(g.limit, 0) + '</td><td class="n' + (g.pct > 100 ? ' err' : '') + '">' + U.fmt(g.pct, 0) + '%</td></tr>';
@@ -88,6 +101,23 @@
     var w = root.open('', '_blank');
     if (!w) { LP.toast('Popup blocked — allow popups to print', 'bad'); return; }
     var N = d.steps.length;
+    // securing material that belongs to a step: voids inside its length band; the door void goes on the last step
+    function stepDunnage(g, i) {
+      var plan = d.dunnage;
+      if (!plan || !plan.gaps.length) return '';
+      // pieces are counted where they sit: a long void along a wall is split over the steps it runs through
+      var last = i === N - 1, lo = i === 0 ? -1e9 : g.y0, hi = last ? 1e9 : (d.steps[i + 1] ? d.steps[i + 1].y0 : g.y1);
+      var mine = plan.gaps.map(function (x) {
+        if (x.type === 'door') return last ? { x: x, n: x.qty } : null;
+        var n = (x.shapes || []).filter(function (sh) { var c = sh.y + sh.l / 2; return c >= lo && c < hi; }).length;
+        return n ? { x: x, n: n } : null;
+      }).filter(Boolean);
+      if (!mine.length) return '';
+      return '<table class="dun"><tr><th colspan="3">' + esc(t('dunStepTitle')) + '</th></tr>' + mine.map(function (m) {
+        var x = m.x, name = x.solution === 'bag' ? t('dunBag', { s: x.bag[0] + '×' + x.bag[1] }) : t('dunTimber', { len: U.fmt(x.len, 0) });
+        return '<tr><td>' + esc(name) + '</td><td>' + esc(LP.dunnageGapText(x)) + '</td><td class="n"><b>' + m.n + '</b></td></tr>';
+      }).join('') + '</table>';
+    }
     var pages = d.steps.map(function (g, i) {
       var top = LP.svg2D('top', { C: d.C, placements: d.placements, specs: d.specs, step: g.to, highlightFrom: g.from, showLabels: true });
       var rows = g.order.map(function (id) {
@@ -99,7 +129,7 @@
         '<div class="pbig">' + g.n + ' ' + t('pcs') + '<small>#' + g.from + '–' + g.to + ' · ' + U.fmt(g.weight, 0) + ' kg</small></div></div>' +
         '<div class="where">' + esc(t('atLength', { a: U.fmt(g.y0, 0), b: U.fmt(g.y1, 0) })) + ' · ' + esc(t('heightTo', { h: U.fmt(g.z1, 0) })) + '</div>' +
         '<div class="imgs">' + (d.images[i] ? '<img src="' + d.images[i] + '">' : '') + '<div class="top">' + top + '</div></div>' +
-        '<table><tr><th>' + t('sku') + '</th><th>' + t('name') + '</th><th>' + t('dims') + ' (cm)</th><th class="n">' + t('qty') + '</th><th>✓</th></tr>' + rows + '</table>' +
+        '<table><tr><th>' + t('sku') + '</th><th>' + t('name') + '</th><th>' + t('dims') + ' (cm)</th><th class="n">' + t('qty') + '</th><th>✓</th></tr>' + rows + '</table>' + stepDunnage(g, i) +
         '<div class="sign"><span>' + t('signLoader') + ' ____________________</span><span>' + t('signTime') + ' ________</span></div></section>';
     }).join('');
     var html = '<!doctype html><html lang="' + LP.i18n.lang + '"><head><meta charset="utf-8"><title>' + esc(t('stepSheetTitle')) + ' — ' + esc(d.project) + '</title>' +
@@ -109,7 +139,7 @@
       '.pbig{font-size:26px;font-weight:700;text-align:right}.pbig small{display:block;font-size:13px;font-weight:400;color:#555}.where{margin:8px 0;font-size:15px;font-weight:600}' +
       '.imgs{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:center}.imgs img{width:100%;border:1px solid #ddd;border-radius:6px}.top svg{width:100%;height:auto}' +
       'table{border-collapse:collapse;width:100%;margin-top:8px;font-size:13px}th,td{border:1px solid #bbb;padding:4px 7px;text-align:left}th{background:#eef2ff}td.n,th.n{text-align:right}td.chk{width:40px}' +
-      '.sw{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:middle}.sign{display:flex;gap:40px;margin-top:14px;font-size:14px}' +
+      '.sw{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:middle}table.dun th{background:#fff4e0}.sign{display:flex;gap:40px;margin-top:14px;font-size:14px}' +
       '.noprint{position:fixed;top:8px;right:8px;padding:8px 14px;font-size:14px}@media print{.noprint{display:none}}</style></head><body>' +
       '<button class="noprint" onclick="print()">🖨 Print / Save as PDF</button>' + pages +
       '<script>setTimeout(function(){print()},1200)<\/script></body></html>';

@@ -312,6 +312,20 @@ a.ib.hl-ib { display: grid; place-items: center; font-weight: 700; font-size: 14
 .style-row .seg { display: flex; }
 .style-row .seg button { flex: 1; justify-content: center; }
 .style-row small { font-size: 11.5px; }
+.dun { display: flex; flex-direction: column; gap: 6px; }
+.dun-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.dun-row:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.dun-ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; }
+.dun-ic .ic { width: 16px; height: 16px; }
+.dun-ic.bag { background: var(--accent-soft); color: var(--accent); }
+.dun-ic.timber { background: #fdf3e2; color: #9a6a1f; }
+.dun-t { flex: 1; min-width: 0; font-size: 13px; }
+.dun-t small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.dun-q { font-weight: 700; white-space: nowrap; font-size: 13px; }
+.dun-warn { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; color: #9a5b00; background: #fff6e5; border-radius: 8px; padding: 6px 8px; }
+.dun-warn .ic { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+.dun-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--fg2); }
+.dun-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 #tColorBy button { padding: 5px 4px; font-size: 12.5px; }
 .seg.speed { padding: 2px; margin-left: 2px; }
 .seg.speed button { padding: 3px 7px; font-size: 12px; }

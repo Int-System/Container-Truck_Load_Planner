@@ -603,6 +603,85 @@
       if (vehicleWalls.doorRight) vehicleWalls.doorRight.visible = vehicleWalls.right.visible;
     }
 
+    // ---- securing material (airbags / timber) suggested by E.dunnagePlan — Display → "Show securing material"
+    var dunG = new THREE.Group(), dunPlan = null, dunShow = false, dunKey = '', dunHL = null;
+    scene.add(dunG);
+    var dunMats = null;
+    function dunMaterials() {
+      if (dunMats) return dunMats;
+      dunMats = {
+        bag: new THREE.MeshStandardMaterial({ color: 0xdfe7ef, roughness: 0.35, metalness: 0.05 }),
+        valve: new THREE.MeshStandardMaterial({ color: 0xd85a30, roughness: 0.5 }),
+        timber: new THREE.MeshStandardMaterial({ color: 0xc8a06a, roughness: 0.9 }),
+        gapFill: new THREE.MeshBasicMaterial({ color: 0xe24b4a, transparent: true, opacity: 0.06, depthWrite: false }),
+        gapLine: new THREE.LineDashedMaterial({ color: 0xe24b4a, dashSize: 8, gapSize: 5 })
+      };
+      return dunMats;
+    }
+    // airbag: a unit box pulled part-way towards a sphere → rounded pillow (fits −0.5…0.5)
+    var unitSphere = (function () {
+      var g = new THREE.BoxGeometry(1, 1, 1, 10, 10, 10), pos = g.attributes.position, v = new THREE.Vector3(), sph = new THREE.Vector3();
+      for (var i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        sph.copy(v).normalize().multiplyScalar(0.5);
+        v.lerp(sph, 0.55);
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      g.computeBoundingBox();
+      var bb = g.boundingBox, sx = 1 / (bb.max.x - bb.min.x);
+      g.scale(sx, sx, sx);
+      g.computeVertexNormals();
+      return g;
+    })();
+    function buildDunnage() {
+      dunG.children.slice().forEach(function (o) { dunG.remove(o); if (o.geometry && o.geometry !== unitBox && o.geometry !== unitSphere) o.geometry.dispose(); if (o.userData.clone) o.material.dispose(); });
+      dunG.visible = dunShow;
+      if (!dunShow || !dunPlan || !dunPlan.gaps.length) { dirty = true; return; }
+      var M = dunMaterials();
+      dunPlan.gaps.forEach(function (g) {
+        var gh = Math.max(10, g.h);
+        var fill = new THREE.Mesh(unitBox, M.gapFill);
+        fill.position.set((g.y0 + g.y1) / 2 - C.L / 2, gh / 2, C.W / 2 - (g.x0 + g.x1) / 2);
+        fill.scale.set(Math.max(1, g.y1 - g.y0), gh, Math.max(1, g.x1 - g.x0));
+        fill.userData.gap = g.id; fill.renderOrder = 2;
+        dunG.add(fill);
+        var edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(1, g.y1 - g.y0), gh, Math.max(1, g.x1 - g.x0))), M.gapLine);
+        edges.position.copy(fill.position);
+        edges.computeLineDistances();
+        dunG.add(edges);
+        (g.shapes || []).forEach(function (sh) {
+          var cx = sh.y + sh.l / 2 - C.L / 2, cy = sh.z + sh.h / 2, cz = C.W / 2 - sh.x - sh.w / 2, m;
+          if (sh.kind === 'bag') {
+            m = new THREE.Mesh(unitSphere, M.bag.clone());
+            m.scale.set(sh.l, sh.h, sh.w);
+            var v = new THREE.Mesh(unitBox, M.valve);
+            v.position.set(cx, sh.z + sh.h + 1.5, cz); v.scale.set(4, 3, 4);
+            dunG.add(v);
+          } else {
+            m = new THREE.Mesh(unitBox, M.timber.clone());
+            m.scale.set(sh.l, sh.h, sh.w);
+          }
+          m.position.set(cx, cy, cz);
+          m.castShadow = true;
+          m.userData.gap = g.id; m.userData.clone = true;
+          dunG.add(m);
+        });
+      });
+      dirty = true;
+    }
+    function stepDunnageHighlight(now) {
+      if (!dunHL) return;
+      var k = (now - dunHL.t0) / 2600, on = k < 1, pulse = on ? (Math.sin((now - dunHL.t0) / 150) + 1) / 2 : 0;
+      dunG.children.forEach(function (o) {
+        if (!o.material || !o.material.emissive || !o.userData.gap) return;
+        var hit = on && dunHL.ids.indexOf(o.userData.gap) >= 0;
+        o.material.emissive.setHex(hit ? 0xfacc15 : 0x000000);
+        o.material.emissiveIntensity = hit ? pulse * 0.9 : 0;
+      });
+      if (!on) dunHL = null;
+      dirty = true;
+    }
+
     function visibleFor(p, f) {
       if (f.hiddenSku && f.hiddenSku[p.sku]) return false;
       if (f.cut != null && f.cut < 1 && p.y >= C.L * f.cut) return false;
@@ -834,6 +913,7 @@
     (function loop() {
       requestAnimationFrame(loop);
       if (animCount) stepAnimations();
+      if (dunHL) stepDunnageHighlight(performance.now());
       if (!dirty) return;
       dirty = false;
       updateCutaway();
@@ -869,6 +949,15 @@
         style = v; showPerson = person; builtKey = null; buildContainer(); configureShadows();
         rebuildCargo();
       },
+      /** Securing-material plan (E.dunnagePlan) and whether to draw it. */
+      setDunnage: function (plan, show) {
+        var key = plan ? JSON.stringify(plan.gaps.map(function (g) { return [g.id, g.type, g.x0, g.x1, g.y0, g.y1, g.h, g.qty]; })) + C.W + C.L : '';
+        if (key === dunKey && !!show === dunShow) return;
+        dunKey = key; dunPlan = plan; dunShow = !!show;
+        buildDunnage();
+      },
+      /** Briefly pulse the dunnage of the given gaps (summary list → "show me"). */
+      highlightDunnage: function (ids) { dunHL = { ids: ids || [], t0: performance.now() }; dirty = true; },
       /** Slide the given items in through the door (loading animation); dur in ms. */
       animateIn: function (uids, dur) {
         var now = performance.now();
