@@ -206,8 +206,10 @@
 
     function updateSel(uid, pos) {
       var p = uid && data && data.byUid[uid];
-      if (!p) { selBox.visible = false; return; }
+      if (!p) { selBox.visible = false; updateSelGuides(null); refreshAxes(); return; }
       var q = pos ? { x: pos.x, y: pos.y, z: pos.z, w: p.w, l: p.l, h: p.h } : p;
+      updateSelGuides(q);
+      if (axes.origin && !vis.origin) refreshAxes(); else if (axes.origin) updateHud();
       selBox.visible = true;
       selBox.position.set(q.y + q.l / 2 - C.L / 2, q.z + q.h / 2, C.W / 2 - q.x - q.w / 2);
       selBox.scale.set(q.l + 1.5, q.h + 1.5, q.w + 1.5);
@@ -322,6 +324,10 @@
       containerG.add(ll);
       cogMarker.scale.setScalar(Math.max(W, L) * 0.008);
       buildVehicle();
+      buildOrigin();
+      buildRulers();
+      refreshAxes();
+      if (data) updateSel(data.selected);
       dirty = true;
     }
 
@@ -373,7 +379,13 @@
         tgt.set(fx + hh * 0.45, gy + hh * 0.45, 0);
         to = new THREE.Vector3(fx - hh * 1.35, gy + hh * 0.85, hh * 1.15);
       } else if (view === 'side') { to = new THREE.Vector3(cx, cy, dist * 0.95); tgt.set(cx, cy, 0); }
+      else if (view === 'right') { to = new THREE.Vector3(cx, cy, -dist * 0.95); tgt.set(cx, cy, 0); }
       else if (view === 'top') { to = new THREE.Vector3(cx + 0.001, dist * 0.95, 0.001); tgt.set(cx, 0, 0); }
+      else if (view === 'front') {   // from the front wall end, looking towards the door
+        var fd = Math.max(C.W, C.H - b.y0) / Math.tan(camera.fov * Math.PI / 360) * 0.75 + C.L / 2;
+        to = new THREE.Vector3(Math.min(-fd, b.x0 - C.W * 0.6), C.H * 0.75, 0);
+        tgt.set(0, (C.H + b.y0) * 0.45, 0);
+      }
       else { resetCamera(); return; }
       var from = camera.position.clone(), fromT = controls.target.clone(), t0 = performance.now();
       camera.far = Math.max(camera.far, dist * 20);
@@ -388,6 +400,179 @@
         if (k < 1) anim = requestAnimationFrame(step); else anim = null;
       })();
     }
+
+    // ---- axes, origin, rulers, view cube (Display menu → "Axes and distances"; all optional) ----
+    // Everything here is an HTML/SVG layer over the canvas: 3D points are projected each frame, so lines
+    // are crisp and thicker than WebGL's 1px lines, and none of it ends up in printed snapshots.
+    var AX_COL = { x: '#e24b4a', y: '#4d8f1c', z: '#2f7fd8' };
+    var axes = { gizmo: false, origin: false, ruler: false, rulerMode: 'manual', rulerStep: 50, cube: false };
+    var hud = document.createElement('div');
+    hud.className = 'v3d-hud';
+    hud.innerHTML = '<svg class="v3d-guides"></svg><div class="v3d-labels"></div><svg class="v3d-nav" viewBox="-60 -60 120 120"></svg>';
+    el.appendChild(hud);
+    var guideSvg = hud.children[0], hudLabels = hud.children[1], nav = hud.children[2];
+    var labels = [], segs = [], originPt = null;   // labels: { el, pos, group }; segs: { a, b, k, dash, w, group }
+    function E(x, y, z) { return new THREE.Vector3(y - C.L / 2, z, C.W / 2 - x); }   // engine → three
+    function addLabel(group, pos, text, cls) {
+      var d = document.createElement('span');
+      d.className = 'v3d-lbl ' + (cls || '');
+      d.textContent = text;
+      hudLabels.appendChild(d);
+      var l = { el: d, pos: pos, group: group };
+      labels.push(l);
+      return l;
+    }
+    function clearGroup(group) {
+      labels = labels.filter(function (l) { if (l.group !== group) return true; l.el.remove(); return false; });
+      segs = segs.filter(function (g) { return g.group !== group; });
+    }
+    function buildOrigin() {
+      clearGroup('origin');
+      originPt = E(0, 0, 0);
+      addLabel('origin', originPt, '0, 0, 0', 'org');
+    }
+    var selSegs = null, selLbl = null;
+    function updateSelGuides(q) {
+      if (!selSegs) {
+        selSegs = ['x', 'y', 'z'].map(function (k) { var g = { a: new THREE.Vector3(), b: new THREE.Vector3(), k: k, dash: true, w: 2.2, group: 'sel' }; segs.push(g); return g; });
+        selLbl = { x: addLabel('sel', new THREE.Vector3(), '', 'ax-x'), y: addLabel('sel', new THREE.Vector3(), '', 'ax-y'), z: addLabel('sel', new THREE.Vector3(), '', 'ax-z') };
+      }
+      var on = axes.origin && !!q;
+      selSegs.forEach(function (g) { g.hidden = !on; });
+      ['x', 'y', 'z'].forEach(function (k) { selLbl[k].hidden = !on; });
+      dirty = true;
+      if (!on) return;
+      var a = E(0, 0, 0), b = E(q.x, 0, 0), c = E(q.x, q.y, 0), d = E(q.x, q.y, q.z);
+      selSegs[0].a.copy(a); selSegs[0].b.copy(b);
+      selSegs[1].a.copy(b); selSegs[1].b.copy(c);
+      selSegs[2].a.copy(c); selSegs[2].b.copy(d);
+      selSegs[0].hidden = q.x < 0.5; selSegs[1].hidden = q.y < 0.5; selSegs[2].hidden = q.z <= 0.5;
+      var r1 = function (v) { return LP.units.fmt(v, 1).replace(/\.0$/, ''); };
+      selLbl.x.el.textContent = 'x ' + r1(q.x); selLbl.x.pos.copy(a).lerp(b, 0.5);
+      selLbl.y.el.textContent = 'y ' + r1(q.y); selLbl.y.pos.copy(b).lerp(c, 0.5);
+      selLbl.z.el.textContent = 'z ' + r1(q.z); selLbl.z.pos.copy(c).lerp(d, 0.5);
+      selLbl.x.hidden = q.x < 0.5; selLbl.y.hidden = q.y < 0.5; selLbl.z.hidden = q.z <= 0.5;
+    }
+    function buildRulers() {
+      clearGroup('ruler');
+      var step = Math.max(1, axes.rulerStep || 50), t = Math.max(C.W, C.L) * 0.018;
+      var labelEvery = step * Math.max(1, Math.ceil(Math.max(C.L, C.W, C.H) / step / 14));
+      function axis(key, len, at, tickEnd, lblAt) {
+        segs.push({ a: at(0), b: at(len), k: key, w: 1.6, group: 'ruler' });
+        for (var v = step; v <= len + 1e-6; v += step) {
+          var major = Math.abs(v / labelEvery - Math.round(v / labelEvery)) < 1e-6;
+          segs.push({ a: at(v), b: tickEnd(v, major ? 1 : 0.55), k: key, w: major ? 1.6 : 1.1, group: 'ruler' });
+          if (major && len - v > labelEvery * 0.35) addLabel('ruler', lblAt(v), String(Math.round(v)), 'ax-' + key + ' rl');
+        }
+        segs.push({ a: at(len), b: tickEnd(len, 1), k: key, w: 1.6, group: 'ruler' });
+        addLabel('ruler', lblAt(len), LP.units.fmt(len, 0), 'ax-' + key + ' rl end');
+      }
+      axis('x', C.W, function (v) { return E(v, -t * 0.25, 0); }, function (v, k) { return E(v, -t * (0.25 + k), 0); }, function (v) { return E(v, -t * 2.1, 0); });
+      axis('y', C.L, function (v) { return E(-t * 0.25, v, 0); }, function (v, k) { return E(-t * (0.25 + k), v, 0); }, function (v) { return E(-t * 2.1, v, 0); });
+      axis('z', C.H, function (v) { return E(-t * 0.25, -t * 0.25, v); }, function (v, k) { return E(-t * (0.25 + k * 0.8), -t * (0.25 + k * 0.8), v); }, function (v) { return E(-t * 1.9, -t * 1.9, v); });
+      dirty = true;
+    }
+    var vis = { ruler: false, origin: false, sel: false };
+    function refreshAxes() {
+      vis.ruler = axes.ruler && (axes.rulerMode === 'always' || manual);
+      vis.origin = axes.origin && (manual || !!(data && data.selected && data.byUid[data.selected]));
+      vis.sel = axes.origin;
+      nav.style.display = axes.gizmo || axes.cube ? '' : 'none';
+      hud.classList.toggle('cube', !!axes.cube);
+      dirty = true;
+      if (camera.aspect) { updateHud(); updateNav(); }   // right away, not only on the next frame
+    }
+    var vProj = new THREE.Vector3();
+    function scr(p, w, h) {
+      vProj.copy(p).project(camera);
+      if (vProj.z >= 1) return null;
+      return [(vProj.x + 1) / 2 * w, (1 - vProj.y) / 2 * h];
+    }
+    function updateHud() {
+      var w = el.clientWidth, h = el.clientHeight;
+      labels.forEach(function (l) {
+        var p = vis[l.group] && !l.hidden ? scr(l.pos, w, h) : null;
+        if (p && (p[0] < -40 || p[1] < -40 || p[0] > w + 40 || p[1] > h + 40)) p = null;
+        l.el.style.display = p ? '' : 'none';
+        if (p) l.el.style.transform = 'translate(' + p[0].toFixed(1) + 'px,' + p[1].toFixed(1) + 'px) translate(-50%,-50%)';
+      });
+      var paths = {}, out = [];
+      segs.forEach(function (g) {
+        if (!vis[g.group] || g.hidden) return;
+        var a = scr(g.a, w, h), b = a && scr(g.b, w, h);
+        if (!b) return;
+        var key = g.k + '|' + (g.dash ? 1 : 0) + '|' + g.w;
+        (paths[key] = paths[key] || []).push('M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + 'L' + b[0].toFixed(1) + ' ' + b[1].toFixed(1));
+      });
+      Object.keys(paths).forEach(function (key) {
+        var k = key.split('|');
+        out.push('<path d="' + paths[key].join('') + '" stroke="' + AX_COL[k[0]] + '" stroke-width="' + k[2] + '"' + (k[1] === '1' ? ' stroke-dasharray="6 4"' : '') + ' fill="none" stroke-linecap="round"/>');
+      });
+      if (vis.origin && originPt) {
+        var o = scr(originPt, w, h);
+        if (o) out.push('<circle cx="' + o[0].toFixed(1) + '" cy="' + o[1].toFixed(1) + '" r="6" class="org-ring"/><circle cx="' + o[0].toFixed(1) + '" cy="' + o[1].toFixed(1) + '" r="2.2" class="org-dot"/>');
+      }
+      guideSvg.innerHTML = out.join('');
+    }
+    // corner widget: engine axes (x → -Z, y → +X, z → +Y in three.js) drawn in camera space
+    var NAV_AX = [{ k: 'x', d: new THREE.Vector3(0, 0, -1) }, { k: 'y', d: new THREE.Vector3(1, 0, 0) }, { k: 'z', d: new THREE.Vector3(0, 1, 0) }];
+    var CUBE_FACES = [
+      { n: [1, 0, 0], view: 'door', key: 'cubeDoor' }, { n: [-1, 0, 0], view: 'front', key: 'frontHere' },
+      { n: [0, 1, 0], view: 'top', key: 'cubeTop' }, { n: [0, 0, 1], view: 'side', key: 'left' }, { n: [0, 0, -1], view: 'right', key: 'right' },
+      { n: [0, -1, 0], view: null, key: null }
+    ];
+    var invQ = new THREE.Quaternion();
+    function navPt(v) { return [v.x, -v.y]; }
+    function updateNav() {
+      if (!axes.gizmo && !axes.cube) return;
+      invQ.copy(camera.quaternion).invert();
+      var h = [], S = axes.cube ? 25 : 0;
+      var f2 = function (n) { return n.toFixed(1); };
+      if (axes.cube) {
+        var faces = CUBE_FACES.map(function (f) {
+          var n = new THREE.Vector3().fromArray(f.n), vn = n.clone().applyQuaternion(invQ);
+          var u = new THREE.Vector3(Math.abs(f.n[1]) ? 1 : 0, 0, 0), vv;
+          if (!u.lengthSq()) u.set(0, 1, 0);
+          vv = new THREE.Vector3().crossVectors(n, u);
+          var cs = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(function (s) {
+            return n.clone().add(u.clone().multiplyScalar(s[0])).add(vv.clone().multiplyScalar(s[1])).multiplyScalar(S).applyQuaternion(invQ);
+          });
+          return { f: f, vn: vn, cs: cs, c: n.clone().multiplyScalar(S).applyQuaternion(invQ) };
+        }).filter(function (x) { return x.vn.z > 0.02; }).sort(function (a, b) { return a.vn.z - b.vn.z; });
+        faces.forEach(function (x) {
+          var d = 'M' + x.cs.map(function (p) { var q = navPt(p); return f2(q[0]) + ' ' + f2(q[1]); }).join('L') + 'Z';
+          h.push('<path class="nav-face' + (x.f.view ? '' : ' off') + '" data-cam="' + (x.f.view || '') + '" d="' + d + '"><title>' + (x.f.key ? LP.esc(LP.t(x.f.key)) : '') + '</title></path>');
+          if (x.f.key && x.vn.z > 0.35) {
+            var c = navPt(x.c);
+            h.push('<text class="nav-ft" x="' + f2(c[0]) + '" y="' + f2(c[1] + 3.5) + '" font-size="' + (9 + x.vn.z * 2).toFixed(1) + '">' + LP.esc(LP.t(x.f.key)) + '</text>');
+          }
+        });
+      } else h.push('<circle class="nav-bg" r="54"/>');
+      // axis arrows: from the cube's origin corner (front-left-bottom), or from the centre
+      var o = axes.cube ? new THREE.Vector3(-S, -S, S).applyQuaternion(invQ) : new THREE.Vector3();
+      var len = axes.cube ? S * 2.6 : 40;
+      NAV_AX.map(function (a) {
+        var start = axes.cube ? new THREE.Vector3(-S, -S, S) : new THREE.Vector3();
+        var tip = start.clone().add(a.d.clone().multiplyScalar(len)).applyQuaternion(invQ);
+        return { a: a, tip: tip };
+      }).sort(function (p, q) { return p.tip.z - q.tip.z; }).forEach(function (r) {
+        var s = navPt(o), e = navPt(r.tip), col = AX_COL[r.a.k];
+        var dx = e[0] - s[0], dy = e[1] - s[1], L = Math.sqrt(dx * dx + dy * dy) || 1;
+        var ux = dx / L, uy = dy / L, ex = e[0] + ux * 10, ey = e[1] + uy * 10;
+        h.push('<line x1="' + f2(s[0]) + '" y1="' + f2(s[1]) + '" x2="' + f2(e[0]) + '" y2="' + f2(e[1]) + '" stroke="' + col + '" stroke-width="3" stroke-linecap="round"/>');
+        h.push('<path d="M' + f2(e[0] + ux * 4) + ' ' + f2(e[1] + uy * 4) + 'L' + f2(e[0] - ux * 3 - uy * 3.5) + ' ' + f2(e[1] - uy * 3 + ux * 3.5) + 'L' + f2(e[0] - ux * 3 + uy * 3.5) + ' ' + f2(e[1] - uy * 3 - ux * 3.5) + 'Z" fill="' + col + '"/>');
+        if (L > 6) h.push('<text class="nav-ax" x="' + f2(ex) + '" y="' + f2(ey + 4) + '" fill="' + col + '">' + r.a.k.toUpperCase() + '</text>');
+      });
+      if (axes.cube) h.push('<g class="nav-home" data-cam="home" transform="translate(-58 -58)"><rect width="18" height="16" rx="4"/><path d="M4 9l5-4.5 5 4.5M5.5 8v5h7V8" fill="none"/><title>' + LP.esc(LP.t('cubeHome')) + '</title></g>');
+      nav.innerHTML = '<title>' + LP.esc(LP.t('axTip')) + '</title>' + h.join('');
+    }
+    nav.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-cam]');
+      if (!t || !t.getAttribute('data-cam')) return;
+      var v = t.getAttribute('data-cam');
+      if (v === 'home') resetCamera(); else setCamera(v);
+    });
+    nav.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
 
     function visibleFor(p, f) {
       if (f.hiddenSku && f.hiddenSku[p.sku]) return false;
@@ -543,6 +728,8 @@
       if (!dirty) return;
       dirty = false;
       renderer.render(scene, camera);
+      updateHud();
+      updateNav();
     })();
 
     resize();
@@ -580,7 +767,15 @@
         wallMats.forEach(function (m) { m.opacity = v; m.visible = v > 0.01; });
         dirty = true;
       },
-      setManual: function (on) { manual = on; canvas.style.cursor = on ? 'grab' : ''; },
+      setManual: function (on) { if (manual !== on) { manual = on; refreshAxes(); } canvas.style.cursor = on ? 'grab' : ''; },
+      /** Axes / origin / rulers / view cube options: { gizmo, origin, ruler, rulerMode: 'manual'|'always', rulerStep, cube }. */
+      setAxes: function (o) {
+        var step = axes.rulerStep;
+        for (var k in o) if (k in axes) axes[k] = o[k];
+        if (axes.rulerStep !== step) buildRulers();
+        refreshAxes();
+        updateSel(data && data.selected);
+      },
       isDragging: function () { return !!drag; },
       resetCamera: resetCamera,
       setCamera: setCamera,

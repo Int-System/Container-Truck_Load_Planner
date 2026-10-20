@@ -42,6 +42,26 @@
   var v2d = LP.Viewer2D($('#view2d'), select);
   var v3d = LP.Viewer3D($('#view3d'), { onSelect: select, onDrag: onDrag, onDragEnd: onDragEnd, onHover: onHover });
 
+  // Display menu → "Axes and distances" (display-only options, remembered per browser)
+  var AXES_DEFAULT = { gizmo: true, origin: true, ruler: false, rulerMode: 'manual', rulerStep: 50, cube: false };
+  S.ui.axes = Object.assign({}, AXES_DEFAULT);
+  try { Object.assign(S.ui.axes, JSON.parse(localStorage.getItem('lp.axes') || '{}')); } catch (e) { /* defaults */ }
+  function setAxes(patch) {
+    Object.assign(S.ui.axes, patch);
+    try { localStorage.setItem('lp.axes', JSON.stringify(S.ui.axes)); } catch (e) { /* ignore */ }
+    if (v3d) v3d.setAxes(S.ui.axes);
+    renderAxesMenu();
+    renderSelInfo();
+  }
+  function renderAxesMenu() {
+    var a = S.ui.axes;
+    $('#axGizmo').checked = a.gizmo; $('#axOrigin').checked = a.origin; $('#axRuler').checked = a.ruler; $('#axCube').checked = a.cube;
+    $('#axRulerOpts').classList.toggle('dis', !a.ruler);
+    $$('#axRulerMode [data-rm]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-rm') === a.rulerMode); });
+    $('#axRulerStep').value = String(a.rulerStep);
+  }
+  if (v3d) v3d.setAxes(S.ui.axes);
+
   function filterCtx(d) {
     var ui = S.ui;
     return { hiddenSku: ui.hiddenSku, layer: ui.layer, tiers: d.val.tiers, cut: ui.cut, step: ui.step };
@@ -128,6 +148,7 @@
     $('#tCab').value = ui.cabColor || '#f5f6f8';
     $('#tLogoDel').disabled = !ui.logo;
     $('#tCut').value = ui.cut;
+    renderAxesMenu();
     var lay = ['<option value="0">' + esc(t('allLayers')) + '</option>'];
     for (var i = 1; i <= d.maxTier; i++) lay.push('<option value="' + i + '">' + esc(t('layerN', { n: i })) + '</option>');
     $('#tLayer').innerHTML = lay.join('');
@@ -161,6 +182,16 @@
     renderEmpty();
   }
 
+  // x / y / z inputs; with the axes option on they are colour-coded and say where each is measured from
+  function selPosHtml(p) {
+    var ax = S.ui.axes && S.ui.axes.origin, truck = LP.vehicleType(S.state.container) !== 'container';
+    var hint = { x: t(truck ? 'fromLeftSide' : 'fromLeftWall'), y: t('fromFront'), z: t(truck ? 'fromBed' : 'fromFloor') };
+    return '<div class="sel-pos' + (ax ? ' axes' : '') + '">' + ['x', 'y', 'z'].map(function (k) {
+      var lbl = ax ? '<span><span class="k">' + k.toUpperCase() + '</span><small>' + esc(hint[k]) + '</small></span>' : k;
+      return '<label>' + lbl + '<input type="number" step="1" data-pos="' + k + '" value="' + U.round(p[k], 1) + '"' + (p.locked ? ' disabled' : '') + '></label>';
+    }).join('') + '<span class="muted small" style="align-self:center">cm</span></div>';
+  }
+
   function renderSelInfo(d) {
     var p = selectedPlacement(), el = $('#selCard');
     if (!p) {
@@ -172,9 +203,7 @@
     el.innerHTML = '<div class="sel-card"><div class="sel-h"><span class="sw" style="background:' + esc(s.color) + '"></span><b>' + esc(s.sku) + '</b><span class="muted">' + esc(s.name || '') + '</span>' +
       (p.locked ? '<span class="pill">' + I('lock') + t('locked') + '</span>' : '') +
       '<button class="ib" data-sel-close title="' + esc(t('close')) + '">' + I('x') + '</button></div>' +
-      '<div class="sel-pos">' + ['x', 'y', 'z'].map(function (k) {
-        return '<label>' + k + '<input type="number" step="1" data-pos="' + k + '" value="' + U.round(p[k], 1) + '"' + (p.locked ? ' disabled' : '') + '></label>';
-      }).join('') + '<span class="muted small" style="align-self:center">cm</span></div>' +
+      selPosHtml(p) +
       '<div class="sel-meta"><span>' + U.fmt(p.w, 1) + '×' + U.fmt(p.l, 1) + '×' + U.fmt(p.h, 1) + ' cm</span><span>' + U.fmt(p.weight, 1) + ' kg</span>' +
       '<span>' + t('tier') + ' ' + (d.val.tiers[p.uid] || '–') + '</span><span>' + t('loadOnTop') + ' ' + U.fmt(d.val.loads[p.uid] || 0, 1) + ' kg</span><span>' + t('seq') + ' #' + (p.seq || '–') + '</span></div>' +
       (flags.length ? '<div class="sel-flags">' + flags.map(function (f) {
@@ -665,6 +694,13 @@
     try { localStorage.setItem('lp.vehicle', e.target.checked ? '1' : '0'); } catch (err) { /* ignore */ }
     if (v3d) v3d.setContainer(S.state.container, vehicleOpts());
   });
+  $('#axGizmo').addEventListener('change', function (e) { setAxes({ gizmo: e.target.checked }); });
+  $('#axOrigin').addEventListener('change', function (e) { setAxes({ origin: e.target.checked }); });
+  $('#axRuler').addEventListener('change', function (e) { setAxes({ ruler: e.target.checked }); });
+  $('#axCube').addEventListener('change', function (e) { setAxes({ cube: e.target.checked }); });
+  $('#axRulerStep').addEventListener('change', function (e) { setAxes({ rulerStep: +e.target.value }); });
+  $('#axRulerMode').addEventListener('click', function (e) { var b = e.target.closest('[data-rm]'); if (b) setAxes({ rulerMode: b.getAttribute('data-rm') }); });
+  $('#axOff').addEventListener('click', function () { setAxes({ gizmo: false, origin: false, ruler: false, cube: false }); });
   $('#tCut').addEventListener('input', function (e) { S.uiChange({ cut: +e.target.value }); });
   $('#tLayer').addEventListener('change', function (e) { S.uiChange({ layer: +e.target.value }); });
   $('#tStep').addEventListener('input', function (e) { var v = +e.target.value; S.uiChange({ step: v >= S.state.placements.length ? null : v }); });
