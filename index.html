@@ -7,7 +7,7 @@
 <meta name="description" content="วางแผนจัดเรียงสินค้าในตู้คอนเทนเนอร์และรถบรรทุก — Auto pack, Manual 3D, 2D views, reports">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css?v=4.1.7">
+<link rel="stylesheet" href="css/app.css?v=4.1.8">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -175,6 +175,18 @@ try{var th=localStorage.getItem('lp.theme');if(th==='light'||th==='dark')documen
               <label class="fld"><span data-i18n="layer"></span><select id="tLayer"></select></label>
               <div class="pop-h sm" data-i18n="skuFilter"></div>
               <div class="chips" id="skuChips"></div>
+              <div class="ax-sec only3d" id="axSec">
+                <div class="pop-h sm"><span data-i18n="axesSec"></span> <span class="pill" data-i18n="newBadge"></span></div>
+                <label class="switch"><input type="checkbox" id="axGizmo"><span class="sl"></span><span><span data-i18n="axGizmo"></span><small data-i18n="axGizmoHint"></small></span></label>
+                <label class="switch"><input type="checkbox" id="axOrigin"><span class="sl"></span><span><span data-i18n="axOrigin"></span><small data-i18n="axOriginHint"></small></span></label>
+                <label class="switch"><input type="checkbox" id="axRuler"><span class="sl"></span><span><span data-i18n="axRuler"></span><small data-i18n="axRulerHint"></small></span></label>
+                <div class="ax-sub" id="axRulerOpts">
+                  <div class="seg" id="axRulerMode"><button data-rm="manual" data-i18n="axRulerManual"></button><button data-rm="always" data-i18n="axRulerAlways"></button></div>
+                  <label><span data-i18n="axRulerStep"></span><select id="axRulerStep"><option value="10">10 cm</option><option value="25">25 cm</option><option value="50">50 cm</option><option value="100">100 cm</option></select></label>
+                </div>
+                <label class="switch"><input type="checkbox" id="axCube"><span class="sl"></span><span><span data-i18n="axCube"></span><small data-i18n="axCubeHint"></small></span></label>
+                <button class="btn sm ghost" id="axOff" data-i18n="axAllOff"></button>
+              </div>
             </div>
           </div>
           <button class="ib" id="btnFull" data-i18n-title="fullscreen"><i data-icon="maximize"></i></button>
@@ -248,34 +260,34 @@ try{var th=localStorage.getItem('lp.theme');if(th==='light'||th==='dark')documen
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <!-- engine (pure, framework-free; also runs in a Web Worker and in Node) -->
-<script src="src/engine/geometry.js?v=4.1.7"></script>
-<script src="src/engine/constraints.js?v=4.1.7"></script>
-<script src="src/engine/cog.js?v=4.1.7"></script>
-<script src="src/engine/packer.js?v=4.1.7"></script>
-<script src="src/engine/multi.js?v=4.1.7"></script>
-<script src="src/engine/index.js?v=4.1.7"></script>
+<script src="src/engine/geometry.js?v=4.1.8"></script>
+<script src="src/engine/constraints.js?v=4.1.8"></script>
+<script src="src/engine/cog.js?v=4.1.8"></script>
+<script src="src/engine/packer.js?v=4.1.8"></script>
+<script src="src/engine/multi.js?v=4.1.8"></script>
+<script src="src/engine/index.js?v=4.1.8"></script>
 <!-- data / utils / state -->
-<script src="src/utils/units.js?v=4.1.7"></script>
-<script src="src/utils/i18n.js?v=4.1.7"></script>
-<script src="src/utils/icons.js?v=4.1.7"></script>
-<script src="src/utils/dom.js?v=4.1.7"></script>
-<script src="src/data/presets.js?v=4.1.7"></script>
-<script src="src/data/vehicles.js?v=4.1.7"></script>
-<script src="src/utils/io.js?v=4.1.7"></script>
-<script src="src/store.js?v=4.1.7"></script>
+<script src="src/utils/units.js?v=4.1.8"></script>
+<script src="src/utils/i18n.js?v=4.1.8"></script>
+<script src="src/utils/icons.js?v=4.1.8"></script>
+<script src="src/utils/dom.js?v=4.1.8"></script>
+<script src="src/data/presets.js?v=4.1.8"></script>
+<script src="src/data/vehicles.js?v=4.1.8"></script>
+<script src="src/utils/io.js?v=4.1.8"></script>
+<script src="src/store.js?v=4.1.8"></script>
 <!-- components -->
-<script src="src/components/viewer2d.js?v=4.1.7"></script>
-<script src="src/components/vehicle3d.js?v=4.1.7"></script>
-<script src="src/components/viewer3d.js?v=4.1.7"></script>
-<script src="src/components/summary.js?v=4.1.7"></script>
-<script src="src/components/insights.js?v=4.1.7"></script>
-<script src="src/components/containerSelect.js?v=4.1.7"></script>
-<script src="src/components/cargoForm.js?v=4.1.7"></script>
-<script src="src/components/skuLibrary.js?v=4.1.7"></script>
-<script src="src/components/shipment.js?v=4.1.7"></script>
-<script src="src/components/checklist.js?v=4.1.7"></script>
-<script src="src/components/tour.js?v=4.1.7"></script>
-<script src="src/components/report.js?v=4.1.7"></script>
-<script src="src/app.js?v=4.1.7"></script>
+<script src="src/components/viewer2d.js?v=4.1.8"></script>
+<script src="src/components/vehicle3d.js?v=4.1.8"></script>
+<script src="src/components/viewer3d.js?v=4.1.8"></script>
+<script src="src/components/summary.js?v=4.1.8"></script>
+<script src="src/components/insights.js?v=4.1.8"></script>
+<script src="src/components/containerSelect.js?v=4.1.8"></script>
+<script src="src/components/cargoForm.js?v=4.1.8"></script>
+<script src="src/components/skuLibrary.js?v=4.1.8"></script>
+<script src="src/components/shipment.js?v=4.1.8"></script>
+<script src="src/components/checklist.js?v=4.1.8"></script>
+<script src="src/components/tour.js?v=4.1.8"></script>
+<script src="src/components/report.js?v=4.1.8"></script>
+<script src="src/app.js?v=4.1.8"></script>
 </body>
 </html>
