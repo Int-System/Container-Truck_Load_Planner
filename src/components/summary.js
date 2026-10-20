@@ -98,7 +98,7 @@
     if (g.type === 'side') return t('dunSide', { side: t(g.x0 < 1 ? 'left' : 'right'), a: f(g.y0), b: f(g.y1), t: f(g.t) });
     return t('dunInner', { a: f(g.y0), b: f(g.y1), t: f(g.t) });
   };
-  LP.dunnageSection = function (plan, hasVgm) {
+  LP.dunnageSection = function (plan, hasVgm, shown) {
     var t = LP.t, U = LP.units, esc = LP.esc, I = LP.icon, byId = {};
     plan.gaps.forEach(function (g) { byId[g.id] = g; });
     var rows = plan.items.map(function (it) {
@@ -110,7 +110,7 @@
     var warn = plan.warnings.length ? '<div class="dun-warn">' + I('alert') + esc(t('w_dunWide', { t: Math.max.apply(null, plan.warnings.map(function (w) { return w.params.t; })) })) + '</div>' : '';
     return '<div class="dun">' + rows + warn +
       '<div class="dun-foot"><span>' + esc(t('dunTotal', { kg: U.fmt(plan.totalWeight, 1) })) + '</span><span class="dun-btns">' +
-      '<button class="btn sm" data-dun-show>' + I('eye') + t('dunShow3d') + '</button>' +
+      '<button class="btn sm' + (shown ? ' on' : '') + '" data-dun-show aria-pressed="' + shown + '">' + I('eye') + t(shown ? 'dunHide3d' : 'dunShow3d') + '</button>' +
       (hasVgm ? '<button class="btn sm" data-dun-vgm>' + I('scale') + t('dunToVgm') + '</button>' : '') +
       '<button class="btn sm ghost" data-dun-cfg title="' + esc(t('dunSettings')) + '">' + I('sliders') + '</button></span></div>' +
       '<div class="muted small">' + esc(t('dunNote')) + '</div></div>';
@@ -157,7 +157,7 @@
       split(st.leftPct, st.rightPct, t('left'), t('right')) + split(st.frontPct, st.rearPct, t('front'), t('rear')) + '</div>');
 
     if (d.vgm) h.push('<h3>' + I('scale') + t('vgmTitle') + '</h3>' + LP.vgmSection(d.vgm, d.ship || {}));
-    if (d.dunnage && d.dunnage.gaps.length && st.count) h.push('<h3>' + I('layers') + t('dunTitle') + '</h3>' + LP.dunnageSection(d.dunnage, !!d.vgm));
+    if (d.dunnage && d.dunnage.gaps.length && st.count) h.push('<h3>' + I('layers') + t('dunTitle') + '</h3>' + LP.dunnageSection(d.dunnage, !!d.vgm, !!LP.store.ui.showDunnage));
     if (d.axle && d.axleCfg) h.push('<h3>' + I('scale') + t('axleLoads') + ' · ' + esc(t('veh_' + d.axleCfg.type)) + '</h3>' + axleSection(d.axle, d.axleCfg, C));
 
     h.push('<h3>' + I('list') + t('perSku') + '</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>' + t('sku') + '</th><th class="n">' + t('requested') + '</th><th class="n">' + t('placed') + '</th><th class="n">' + t('unplaced') + '</th><th class="n">' + t('kg') + '</th></tr></thead><tbody>');

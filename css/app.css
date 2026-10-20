@@ -326,6 +326,7 @@ a.ib.hl-ib { display: grid; place-items: center; font-weight: 700; font-size: 14
 .dun-warn .ic { width: 14px; height: 14px; flex: none; margin-top: 2px; }
 .dun-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--fg2); }
 .dun-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.dun-btns .btn.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 #tColorBy button { padding: 5px 4px; font-size: 12.5px; }
 .seg.speed { padding: 2px; margin-left: 2px; }
 .seg.speed button { padding: 3px 7px; font-size: 12px; }

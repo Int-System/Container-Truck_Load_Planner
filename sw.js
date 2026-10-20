@@ -4,7 +4,7 @@
  * - Libraries / fonts (CDN): CACHE FIRST → available offline after the first visit.
  * Bump VERSION when files are added/removed so the precache list is refreshed.
  */
-var VERSION = 'lp-4.2.1';
+var VERSION = 'lp-4.2.2';
 var APP = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',

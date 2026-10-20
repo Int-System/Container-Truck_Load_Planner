@@ -788,7 +788,7 @@
   function setShowDunnage(on) {
     S.ui.showDunnage = on; savePref('lp.dunnage', on ? '1' : '0');
     if (v3d) v3d.setDunnage(derived().dunnage, on);
-    S.uiChange({});
+    S.uiChange({}, { ui: true, summary: true });      // the summary button reads "Show" / "Hide"
   }
   $('#tDun').addEventListener('change', function (e) { setShowDunnage(e.target.checked); });
   $('#tColorBy').addEventListener('click', function (e) {
@@ -874,10 +874,15 @@
     if (e.target.closest('[data-ship-edit]')) { LP.openShipment(); return; }
     if (e.target.closest('[data-dn]')) { LP.openDeliveryNote(); return; }
     var dunRow = e.target.closest('[data-dun-gaps]');
-    if (dunRow || e.target.closest('[data-dun-show]')) {
+    if (e.target.closest('[data-dun-show]')) {          // toggle: show / hide the securing material in 3D
+      if (!S.ui.showDunnage && S.ui.view !== '3d') S.uiChange({ view: '3d' });
+      setShowDunnage(!S.ui.showDunnage);
+      return;
+    }
+    if (dunRow) {
       if (S.ui.view !== '3d') S.uiChange({ view: '3d' });
       if (!S.ui.showDunnage) setShowDunnage(true);
-      if (dunRow && v3d) v3d.highlightDunnage(dunRow.getAttribute('data-dun-gaps').split(','));
+      if (v3d) v3d.highlightDunnage(dunRow.getAttribute('data-dun-gaps').split(','));
       return;
     }
     if (e.target.closest('[data-dun-vgm]')) {
