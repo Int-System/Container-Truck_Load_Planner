@@ -147,7 +147,27 @@ LPEngineParts.push(function constraints(E) {
    * Validate an arbitrary layout (auto or manual).
    * Returns { flags: {uid:[codes]}, issues:[{code,severity,uids,params}], totalWeight, tiers:{uid:tier}, loads:{uid:kg} }
    */
+  /** Validate a layout; keep-out zones (E.obstaclesOf) count as solid, supporting, never-flagged blocks. */
   E.validate = function (C, placements, specs, opts) {
+    var obs = E.obstaclePlacements(C);
+    if (!obs.length) return validateCore(C, placements, specs, opts);
+    var sp = {}, k;
+    for (k in specs) sp[k] = specs[k];
+    sp.__obs = E.OBSTACLE_SPEC;
+    var r = validateCore(C, obs.concat(placements), sp, opts);
+    obs.forEach(function (o) { delete r.flags[o.uid]; delete r.tiers[o.uid]; delete r.loads[o.uid]; });
+    r.issues = r.issues.map(function (is) {
+      if (!is.uids || !is.uids.length) return is;
+      var u = is.uids.filter(function (id) { return String(id).indexOf('__obs') !== 0; });
+      var c = {};
+      for (var kk in is) c[kk] = is[kk];
+      c.uids = u;
+      if (c.params && c.params.n != null) { c.params = Object.assign({}, c.params, { n: u.length }); }
+      return c;
+    }).filter(function (is) { return !is.uids || is.uids.length || !(is.params && is.params.n != null); });
+    return r;
+  };
+  function validateCore(C, placements, specs, opts) {
     opts = opts || {};
     var flags = {}, issues = [];
     var minSupport = opts.minSupport != null ? opts.minSupport : 0.75;
@@ -251,6 +271,8 @@ LPEngineParts.push(function constraints(E) {
   /** Fast check for a single moved box during drag: bounds + collisions only. */
   E.quickCheck = function (C, box, others) {
     if (!E.insideContainer(box, C)) return 'outOfBounds';
+    var obs = E.obstaclePlacements(C);
+    for (var j = 0; j < obs.length; j++) if (E.intersects(box, obs[j])) return 'collision';
     for (var i = 0; i < others.length; i++) {
       if (others[i].uid !== box.uid && E.intersects(box, others[i])) return 'collision';
     }

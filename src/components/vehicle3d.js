@@ -144,6 +144,16 @@
     t.anisotropy = 4;
     return t;
   }
+  function thaiPlateTexture(THREE) {
+    return canvasTex(THREE, 'thplate', 256, 112, function (g, w, h) {
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = '#111'; g.lineWidth = 6; g.strokeRect(4, 4, w - 8, h - 8);
+      g.fillStyle = '#111'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = 'bold 50px Tahoma, sans-serif'; g.fillText('กข 1234', w / 2, 44);
+      g.font = '24px Tahoma, sans-serif'; g.fillText('กรุงเทพมหานคร', w / 2, 88);
+    });
+  }
+
   /** Corrugated walls, roof, wooden floor and open doors with locking rods (+ container number plate). */
   function realShell(THREE, G, add, box, cyl, M, C) {
     var L = C.L, W = C.W, H = C.H, walls = {};
@@ -247,6 +257,7 @@
     var cabW = isPickup ? Math.max(W, 175) : Math.min(Math.max(W * 0.97, 205), 250);
     var yb = ground + r, yt = ground + sp.cabTop;
     var railH = 22, railTop = -8.5;                         // chassis rails just under the body floor
+    var bedT = sp.open ? Math.max(4, (cabW - W) / 2 - 0.8) : 0, bedZo = W / 2 + 0.8 + bedT;   // open bed: wall thickness, outer face
 
     // ---------------------------------------------------------------- materials
     var paintColor = opts.cabColor ? new THREE.Color(opts.cabColor) : (isTrailer ? 0xf2f4f7 : 0xf5f6f8);
@@ -268,7 +279,9 @@
       white: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }),
       box: new THREE.MeshStandardMaterial({ color: 0x5b6573, metalness: 0.2, roughness: 0.7 }),
       container: new THREE.MeshStandardMaterial({ color: 0xb4432c, metalness: 0.25, roughness: 0.55 }),
-      casting: new THREE.MeshStandardMaterial({ color: 0x3b3f45, metalness: 0.5, roughness: 0.5 })
+      casting: new THREE.MeshStandardMaterial({ color: 0x3b3f45, metalness: 0.5, roughness: 0.5 }),
+      liner: new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.05, roughness: 0.9 }),
+      linerRib: new THREE.MeshStandardMaterial({ color: 0x1c1f24, metalness: 0.05, roughness: 0.85 })
     };
 
     function add(mesh) { mesh.castShadow = true; mesh.receiveShadow = true; G.add(mesh); return mesh; }
@@ -323,10 +336,22 @@
     var capGeo = new THREE.CylinderGeometry(rr * 0.12, rr * 0.12, 7.6, 12);
     var lugGeo = new THREE.CylinderGeometry(1.5, 1.5, 3.4, 6);
     var holeGeo = new THREE.CylinderGeometry(rr * 0.13, rr * 0.13, 1.8, 14);
+    var spokeGeo = new THREE.BoxGeometry(rr * 0.8, 2.2, 5.5), lipGeo = new THREE.TorusGeometry(rr * 0.95, 1.2, 8, 40);
     function wheel(x, z, outer, detail) {
       var g = new THREE.Group();
       [new THREE.Mesh(tyreGeo, M.rubber), new THREE.Mesh(rimGeo, M.rimDark)].forEach(function (m) { m.castShadow = true; g.add(m); });
-      if (detail) {
+      if (detail && sp.open) {
+        var ay = tw * 0.45, af = new THREE.Mesh(faceGeo, M.rimDark);
+        af.position.y = ay - 0.6; g.add(af);
+        for (var k = 0; k < 6; k++) {
+          var ak = k / 6 * Math.PI * 2, spk = new THREE.Mesh(spokeGeo, M.rim);
+          spk.position.set(Math.cos(ak) * rr * 0.52, ay + 0.8, Math.sin(ak) * rr * 0.52);
+          spk.rotation.y = -ak; spk.castShadow = true; g.add(spk);
+        }
+        var lip = new THREE.Mesh(lipGeo, M.rim); lip.rotation.x = Math.PI / 2; lip.position.y = ay + 0.4; g.add(lip);
+        var ahub = new THREE.Mesh(hubGeo, M.chrome); ahub.position.y = ay + 2; g.add(ahub);
+        var acap = new THREE.Mesh(capGeo, M.plastic); acap.position.y = ay + 2; g.add(acap);
+      } else if (detail) {
         var fy = tw * 0.45, face = new THREE.Mesh(faceGeo, M.rim);
         face.position.y = fy; g.add(face);
         var hub = new THREE.Mesh(hubGeo, M.chrome); hub.position.y = fy + 3; g.add(hub);
@@ -365,6 +390,38 @@
         add(m);
       });
     }
+    /** Half-ring wheel-arch flare (dark plastic) standing on the side face. */
+    function archFlare(xc, yc, rIn, rOut, z, depth) {
+      var f = new THREE.Shape();
+      f.moveTo(xc + rOut, yc);
+      f.absarc(xc, yc, rOut, 0, Math.PI, false);
+      f.lineTo(xc - rIn, yc);
+      f.absarc(xc, yc, rIn, Math.PI, 0, true);
+      f.lineTo(xc + rOut, yc);
+      var m = extrude(f, depth, M.plastic, 0.6, 2);
+      m.position.z = z;
+      return m;
+    }
+    /** Company logo decal on both doors (aspect kept, fitted into the given panel). */
+    function logoDecal(lx0, lx1, ly0, ly1) {
+      if (!opts.logo) return;
+      var img = new Image();
+      img.onload = function () {
+        var tex = new THREE.Texture(img);
+        tex.needsUpdate = true;
+        var bw = lx1 - lx0, bh = ly1 - ly0, ar = img.width / img.height;
+        var pw = Math.min(bw, bh * ar), ph = pw / ar;
+        var mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+        [-1, 1].forEach(function (sg) {
+          var m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), mat);
+          m.position.set((lx0 + lx1) / 2, (ly0 + ly1) / 2, sg * (cabW / 2 + 0.7));
+          if (sg < 0) m.rotation.y = Math.PI;
+          G.add(m);
+        });
+        if (opts.onAsset) opts.onAsset();
+      };
+      img.src = opts.logo;
+    }
     function mudflap(x, zOuter, width) {
       [-1, 1].forEach(function (s) { box(2, r * 1.15, width, M.plastic, x, ground + r * 0.6 + 4, s * (zOuter - width / 2)); });
     }
@@ -372,7 +429,145 @@
     // ---------------------------------------------------------------- cab
     var bev = isPickup ? 5 : 7;
     var axF = lay.axles[0].y - L / 2, archR = r * 1.16;
+
+    /** Open pickup cab: hood at bed-rail height, raked windscreen, single / extended / double cab doors. */
+    function openPickupCab() {
+      var WHc = Math.min(+(C.bed && C.bed.wallH) || 46, H);
+      var X0 = x0 + bev, X1 = x1 - bev, YT = yt - bev, YB = yb;
+      var yH = Math.min(WHc - 8, yt - 62), yW = yH + 9, yWT = YT - 9;
+      var wsx0 = X0 + 104, wsx1 = wsx0 + 46;
+      var cs = new THREE.Shape();
+      cs.moveTo(X1, YB + 6);
+      cs.lineTo(axF + archR + bev, YB);
+      cs.absarc(axF, YB, archR + bev, 0, Math.PI, false);
+      cs.lineTo(X0 + 14, YB);
+      cs.quadraticCurveTo(X0 - 2, YB, X0 - 2, YB + 16);
+      cs.lineTo(X0, yH - 14);
+      cs.quadraticCurveTo(X0 + 1, yH - 1, X0 + 16, yH);
+      cs.lineTo(wsx0 - 8, yH + 5);
+      cs.quadraticCurveTo(wsx0, yH + 6, wsx0 + 3, yH + 10);
+      cs.lineTo(wsx1 - 6, YT - 4);
+      cs.quadraticCurveTo(wsx1, YT, wsx1 + 16, YT);
+      cs.lineTo(X1 - 14, YT);
+      cs.quadraticCurveTo(X1 - 1, YT, X1, YT - 12);
+      cs.lineTo(X1, YB + 6);
+      extrude(cs, cabW, M.paint, bev, 4);
+      // windscreen band just outside the bevel-expanded slope
+      var wP = [wsx0 + 3, yH + 10], wQ = [wsx1 - 6, YT - 4];
+      var a0 = lerp2(wP, wQ, 0.05), a1 = lerp2(wP, wQ, 0.95);
+      var outA = offsetSeg(a0, a1, bev + 1.4), inA = offsetSeg(a0, a1, bev - 4);
+      extrude(poly([outA[0], outA[1], inA[1], inA[0]]), cabW - 2 * bev - 14, M.glass, 0);
+      // side windows: one for a single cab, front + rear (black B-pillar between) for extended / double cabs
+      var wA = function (y) { return wP[0] + (y - wP[1]) * (wQ[0] - wP[0]) / (wQ[1] - wP[1]) + 12; };
+      var xe = X1 - 14, dF = Math.max(wsx0 - 4, axF + archR + bev + 6), wins, edges;
+      if (type === 'pickupS') {
+        wins = [[[wA(yW), yW], [wA(yWT), yWT], [xe - 8, yWT], [xe, yWT - 8], [xe, yW]]];
+        edges = [dF, X1 - 8];
+      } else {
+        var bx = type === 'pickupD' ? (wA(yW) + xe) / 2 + 8 : xe - 34;
+        wins = [[[wA(yW), yW], [wA(yWT), yWT], [bx - 5, yWT], [bx - 5, yW]],
+          [[bx + 5, yW], [bx + 5, yWT], [xe - 12, yWT], [xe, yWT - 12], [xe, yW]]];
+        edges = [dF, bx, X1 - 8];
+        box(10, yWT - yW + 2, cabW + 1, M.grille, bx, (yW + yWT) / 2, 0);
+      }
+      wins.forEach(function (w) { extrude(poly(w), cabW + 1.2, M.glass, 0); });
+      logoDecal(dF + 6, edges[1] - 14, yb + 12, yW - 6);
+      var mx = wA(yW) - 4, xs0 = axF + archR + bev + 1;
+      [-1, 1].forEach(function (sg) {
+        var zs = sg * (cabW / 2);
+        edges.forEach(function (ex) { box(1.2, yW - yb - 9, 0.6, M.grille, ex, (yb + 8 + yW - 1) / 2, zs + sg * 0.2); });   // door seams
+        for (var di = 1; di < edges.length; di++) box(10, 2.6, 1.6, M.chrome, edges[di] - 15, yW - 9, zs + sg * 0.8);       // handles
+        box(x1 - xs0, 9, 1.4, M.plastic, (x1 + xs0) / 2, yb + 4.5, zs + sg * 0.4);                                          // lower cladding
+        // running board on two brackets
+        var rb0 = xs0 + 7, rb1 = x1 - 6;
+        box(rb1 - rb0, 3, 15, M.plastic, (rb0 + rb1) / 2, yb - 7, zs + sg * 3);
+        box(rb1 - rb0 - 4, 0.8, 11, M.alu, (rb0 + rb1) / 2, yb - 5.2, zs + sg * 3);
+        [rb0 + 10, rb1 - 10].forEach(function (bxp) { box(4, 6, 10, M.chassis, bxp, yb - 3, zs - sg * 4); });
+        archFlare(axF, yb, archR + bev - 0.5, archR + bev + 4, zs + sg * 1.2, 3);
+        if (sg > 0) fender(axF, cabW / 2, 30, archR - 0.8, M.plastic);                                                 // dark wheel well
+        // mirror: arm, housing, glass facing the driver
+        box(6, 3, 10, M.plastic, mx, yW + 2, zs + sg * 5);
+        extrude(roundRect(mx - 5, yW + 1, mx + 5, yW + 15, 3), 18, M.plastic, 1.2, 2).position.z = zs + sg * 16;
+        box(0.8, 11, 15, M.glass, mx + 6, yW + 8, zs + sg * 16);
+        // headlight: dark housing, lens, LED strip, indicator + side marker
+        extrude(roundRect(x0 - 3, yH - 15, x0 + 5, yH - 3, 3), 32, M.grille, 1, 2).position.z = zs - sg * 20;
+        box(1.6, 7, 20, M.head, x0 - 4.2, yH - 9, zs - sg * 24);
+        box(1.6, 1.6, 28, M.head, x0 - 4.3, yH - 4.5, zs - sg * 20);
+        box(1.6, 7, 6, M.amber, x0 - 4.2, yH - 9, zs - sg * 9);
+        box(6, 3, 0.8, M.amber, x0 + 8, yH - 9, zs + sg * 0.3);
+        // fog light in the bumper + wiper
+        box(1.8, 10, 14, M.grille, x0 - 8.4, yb + 4, zs - sg * 20);
+        cyl(3.4, 3.4, 2, M.head, x0 - 8.8, yb + 4, zs - sg * 20, 'x', 16);
+        box(1.2, 1.2, cabW * 0.3, M.plastic, outA[0][0] + 2, outA[0][1] + 0.6, sg * cabW * 0.16);
+      });
+      // grille with chrome bars, body-coloured bumper with a dark intake and skid plate
+      var gy0 = yb + 20, gy1 = yH - 5, gw = cabW * 0.56;
+      extrude(roundRect(x0 - 3.5, gy0, x0 + 6, gy1, 5), gw, M.grille, 1.2, 2);
+      for (var gb = 1; gb <= 3; gb++) box(1.6, 2.2, gw - 6, M.chrome, x0 - 4.8, gy0 + (gy1 - gy0) * gb / 4, 0);
+      box(2, 3.2, gw + 2, M.chrome, x0 - 4.6, gy1 + 0.4, 0);
+      extrude(roundRect(x0 - 7, yb - 4, x0 + 14, yb + 19, 6), cabW + 4, M.paint, 2, 3);
+      box(2, 7, cabW * 0.46, M.grille, x0 - 9.2, yb + 4, 0);
+      box(10, 2, cabW * 0.45, M.alu, x0 - 2, yb - 6, 0);
+      // rear window + third brake light (seen from the bed)
+      box(1.2, yWT - yW - 14, cabW - 2 * bev - 30, M.glass, x1 + 0.4, (yW + yWT - 6) / 2, 0);
+      box(1.2, 2.5, 26, M.red, x1 + 0.4, yWT - 4, 0);
+    }
+    /** Open pickup bed: double-wall sides with a wheel-arch cut-out, black liner, tailgate, tall tail lights, step bumper. */
+    function openPickupBed() {
+      var WHb = Math.min(+(C.bed && C.bed.wallH) || 46, H), t = bedT, zc = bedZo - t / 2;
+      var xa = front - 5.8, xb = door + 5.8, ys = yb, xr = lay.axles[1].y - L / 2, ra = archR + 2;
+      var arch = xr - ra > xa + 6 && xr + ra < xb - 6;
+      var sk = new THREE.Shape();
+      sk.moveTo(xa, ys);
+      if (arch) { sk.lineTo(xr - ra, ys); sk.absarc(xr, ys, ra, Math.PI, 0, true); }
+      sk.lineTo(xb, ys); sk.lineTo(xb, WHb); sk.lineTo(xa, WHb); sk.lineTo(xa, ys);
+      // ribbed liner floor
+      box(L + 1.6, 3, W + 1.6, M.liner, 0, -2.1, 0);
+      for (var rz = -W / 2 + 10; rz < W / 2 - 6; rz += 14) box(L - 4, 1, 3.5, M.linerRib, 0, -0.55, rz);
+      [-1, 1].forEach(function (sg) {
+        var zo = sg * (bedZo + 0.5);
+        extrude(sk, t, M.paint, 0.8, 2).position.z = sg * zc;
+        box(L + 1.6, WHb, 0.6, M.liner, 0, WHb / 2, sg * (W / 2 + 0.4));               // liner on the inner face
+        box(xb - xa + 2, 3, t + 2.4, M.plastic, (xa + xb) / 2, WHb + 2, sg * zc);     // bed-rail cap
+        (arch ? [[xa, xr - ra], [xr + ra, xb]] : [[xa, xb]]).forEach(function (sgm) {   // lower cladding
+          box(sgm[1] - sgm[0], 8, 1.4, M.plastic, (sgm[0] + sgm[1]) / 2, ys + 4, zo);
+        });
+        [0.15, 0.5, 0.85].forEach(function (k) { box(5, 2.5, 2, M.chrome, front + L * k, WHb - 5, zo + sg * 0.5); });   // rope hooks
+        if (arch) {
+          fender(xr, bedZo, t + 10, ra - 1, M.plastic);
+          archFlare(xr, ys, ra - 0.8, ra + 3.5, sg * (bedZo + 0.9), 2.6);
+        }
+        // tall tail light wrapping round the corner: brake/tail, indicator, reverse
+        var hT = WHb * 0.72, yc = WHb * 0.52, zl = sg * zc;
+        box(2, hT + 3, t + 0.4, M.grille, xb + 1.2, yc, zl);
+        box(2.2, hT * 0.6, t - 1.6, M.red, xb + 1.5, yc + hT * 0.18, zl);
+        box(2.2, hT * 0.14, t - 1.6, M.amber, xb + 1.5, yc - hT * 0.18, zl);
+        box(2.2, hT * 0.16, t - 1.6, M.white, xb + 1.5, yc - hT * 0.35, zl);
+        box(9, hT * 0.6, 0.8, M.red, xb - 3.5, yc + hT * 0.18, sg * (bedZo + 0.6));
+      });
+      // bulkhead
+      box(5, WHb - ys, W + 1.6, M.paint, front - 3.3, (WHb + ys) / 2, 0);
+      box(0.6, WHb, W, M.liner, front - 0.4, WHb / 2, 0);
+      box(7, 3, W + 1.6, M.plastic, front - 3.3, WHb + 2, 0);
+      // tailgate (closed): raised centre panel, handle, number plate
+      box(5, WHb + 14, W + 1.4, M.paint, door + 3.3, (WHb - 14) / 2, 0);
+      box(0.6, WHb, W, M.liner, door + 0.4, WHb / 2, 0);
+      box(7, 3, W + 1.4, M.plastic, door + 3.3, WHb + 2, 0);
+      box(1, WHb * 0.36, W * 0.78, M.paint, door + 6.2, WHb * 0.55, 0);
+      box(1.2, 8, 30, M.grille, door + 6.2, WHb - 7, 0);
+      box(2, 3.4, 22, M.chrome, door + 6.8, WHb - 7, 0);
+      box(0.6, 17, 36, M.plastic, door + 6.1, 2, 0);
+      var pl = new THREE.Mesh(new THREE.PlaneGeometry(34, 15), new THREE.MeshStandardMaterial({ map: thaiPlateTexture(THREE), roughness: 0.5 }));
+      pl.rotation.y = Math.PI / 2;
+      pl.position.set(door + 6.5, 2, 0);
+      G.add(pl);
+      // step bumper
+      extrude(roundRect(door + 1, -32, door + 17, -14, 4), W + 1.6 + 2 * t + 2, M.chrome, 1.5, 2);
+      box(10, 1, W * 0.35, M.plastic, door + 10, -12.6, 0);
+    }
     var winShape, wsP, wsQ, yWin, sideWin;
+    if (sp.open) openPickupCab();
+    else {
     var s = new THREE.Shape();
     if (isPickup) {
       var hoodL = 82, yHood = yb + (yt - yb) * 0.47, X0 = x0 + bev, X1 = x1 - bev, YT = yt - bev, YB = yb;
@@ -422,26 +617,7 @@
     // door seam + handle + window trim
     var doorX = isPickup ? sideWin[4][0] + 6 : sideWin[4][0] + 4;
     // company logo on both doors (decal, aspect kept, fitted into the door panel below the window)
-    if (opts.logo) {
-      var lx0 = isPickup ? sideWin[0][0] + 4 : x0 + bev + 16, lx1 = doorX - 8;
-      var ly0 = isPickup ? yb + 14 : yb + 30, ly1 = yWin - 8;
-      var img = new Image();
-      img.onload = function () {
-        var tex = new THREE.Texture(img);
-        tex.needsUpdate = true;
-        var bw = lx1 - lx0, bh = ly1 - ly0, ar = img.width / img.height;
-        var pw = Math.min(bw, bh * ar), ph = pw / ar;
-        var mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
-        [-1, 1].forEach(function (sg) {
-          var m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), mat);
-          m.position.set((lx0 + lx1) / 2, (ly0 + ly1) / 2, sg * (cabW / 2 + 0.7));
-          if (sg < 0) m.rotation.y = Math.PI;
-          G.add(m);
-        });
-        if (opts.onAsset) opts.onAsset();
-      };
-      img.src = opts.logo;
-    }
+    logoDecal(isPickup ? sideWin[0][0] + 4 : x0 + bev + 16, doorX - 8, isPickup ? yb + 14 : yb + 30, yWin - 8);
     [-1, 1].forEach(function (sg) {
       box(1.2, (yt - yb) * 0.66, 0.6, M.grille, doorX, yb + (yt - yb) * 0.4, sg * (cabW / 2 + 0.2));
       box(9, 2.4, 1.6, M.chrome, doorX - 16, yWin - 8, sg * (cabW / 2 + 0.8));
@@ -529,9 +705,10 @@
         box(Math.min(44, tankL), 26, 30, M.chassis, (tStart + tEnd) / 2, ty, -tz);   // battery box opposite side
       }
     }
+    }
 
     // ---------------------------------------------------------------- chassis
-    box(L, 8, W, M.box, 0, -4.2, 0);                                             // body sub-floor
+    if (!sp.open) box(L, 8, W, M.box, 0, -4.2, 0);                               // body sub-floor
     var railFrom = isTrailer ? front + 4 : x0 + 20;
     [-1, 1].forEach(function (sg) {
       box(door - railFrom, railH, 9, M.chassis, (door + railFrom) / 2, railTop - railH / 2, sg * W * 0.28);
@@ -551,16 +728,20 @@
         box(4, 4, W * 0.6, M.alu, lx, ground + legH * 0.7, 0);
       }
     }
-    // rear bumper / underride bar + tail lights
-    box(8, 12, W * 0.92, M.chassis, door + 4, railTop - railH - 10, 0);
-    [-1, 1].forEach(function (sg) {
-      box(3, 9, 22, M.red, door + 8.6, railTop - railH - 10, sg * W * 0.36);
-      box(3, 9, 8, M.amber, door + 8.6, railTop - railH - 10, sg * W * 0.24);
-    });
+    // rear bumper / underride bar + tail lights (the open bed has its own)
+    if (!sp.open) {
+      box(8, 12, W * 0.92, M.chassis, door + 4, railTop - railH - 10, 0);
+      [-1, 1].forEach(function (sg) {
+        box(3, 9, 22, M.red, door + 8.6, railTop - railH - 10, sg * W * 0.36);
+        box(3, 9, 8, M.amber, door + 8.6, railTop - railH - 10, sg * W * 0.24);
+      });
+    }
 
     // ---------------------------------------------------------------- body frame around the cargo box
     if (isTrailer) {
       containerFrame(box, cyl, M, L, W, H);
+    } else if (sp.open) {
+      openPickupBed();                                       // the inner wheel arches are drawn by the viewer
     } else {
       var pst = 7, fm = M.alu;
       [-1, 1].forEach(function (sg) {
@@ -586,7 +767,7 @@
     }
 
     // ---------------------------------------------------------------- axles, fenders, mudflaps
-    var zR = W / 2 + 2, zF = cabW / 2 + 3, rearMost = -Infinity;
+    var zR = sp.open ? bedZo - 2.5 : W / 2 + 2, zF = sp.open ? cabW / 2 - 1.5 : cabW / 2 + 3, rearMost = -Infinity;
     lay.axles.forEach(function (ax, i) {
       var x = ax.y - L / 2;
       axle(x, i === 0 ? zF : zR, ax.dual, i === 0);
@@ -602,8 +783,8 @@
         [-1, 1].forEach(function (sg) { box(span + r * 1.4, 2.5, wdt, M.plastic, gx, ground + r * 2.2, sg * (zR + 3 - wdt / 2)); });
       }
     });
-    if (isPickup) fender(lay.axles[1].y - L / 2, zR + 4, tw + 10, r * 1.15, M.paint);
-    mudflap(rearMost + r + 12, zR + 2, lay.axles[lay.axles.length - 1].dual ? tw * 2 + 6 : tw + 6);
+    if (isPickup && !sp.open) fender(lay.axles[1].y - L / 2, zR + 4, tw + 10, r * 1.15, M.paint);
+    if (!sp.open) mudflap(rearMost + r + 12, zR + 2, lay.axles[lay.axles.length - 1].dual ? tw * 2 + 6 : tw + 6);
     if (isTrailer) {
       var lastDrive = Math.max.apply(null, lay.axles.filter(function (a) { return a.group === 'drive'; }).map(function (a) { return a.y; }));
       mudflap(lastDrive - L / 2 + r + 12, zR + 2, tw * 2 + 6);

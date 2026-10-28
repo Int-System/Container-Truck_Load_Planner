@@ -8,7 +8,7 @@
   var MAX_HISTORY = 150, AUTOSAVE_KEY = 'lp.autosave.v1', PRESET_KEY = 'lp.customPresets.v1';
 
   function presetToContainer(p) {
-    return { presetId: p.id, name: p.name, nameTh: p.nameTh, W: p.W, L: p.L, H: p.H, maxPayload: p.maxPayload, cost: p.cost || 0, doorW: p.doorW || p.W, doorH: p.doorH || p.H, vehicle: p.vehicle || null, tare: p.tare || 0, maxGross: p.maxGross || 0, floorLoad: p.floorLoad || 0, axle: p.axle ? JSON.parse(JSON.stringify(p.axle)) : null };
+    return { presetId: p.id, name: p.name, nameTh: p.nameTh, W: p.W, L: p.L, H: p.H, maxPayload: p.maxPayload, cost: p.cost || 0, doorW: p.doorW || p.W, doorH: p.doorH || p.H, vehicle: p.vehicle || null, tare: p.tare || 0, maxGross: p.maxGross || 0, floorLoad: p.floorLoad || 0, axle: p.axle ? JSON.parse(JSON.stringify(p.axle)) : null, bed: p.bed ? JSON.parse(JSON.stringify(p.bed)) : null };
   }
 
   function defaultState() {

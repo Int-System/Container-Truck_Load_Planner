@@ -12,11 +12,12 @@
 
   // Shipping containers default to 'container' = the box only, standing on the ground (no vehicle,
   // no axle loads). 'trailer' (tractor + chassis) can still be chosen manually per job.
-  var BY_PRESET = { pk4: 'pickup', t4big: 'truck4', t6: 'truck6', t10: 'truck10', c20: 'container', c40: 'container', c40hc: 'container', c45hc: 'container', rf20: 'container', rf40: 'container' };
+  var BY_PRESET = { pko1: 'pickupS', pko2: 'pickupX', pko4: 'pickupD', pk4: 'pickup', t4big: 'truck4', t6: 'truck6', t10: 'truck10', c20: 'container', c40: 'container', c40hc: 'container', c45hc: 'container', rf20: 'container', rf40: 'container' };
 
   /** Which vehicle carries this box (custom sizes are guessed from the length). */
   LP.vehicleType = function (C) {
     if (C.vehicle) return C.vehicle;
+    if (C.bed) return C.L >= 215 ? 'pickupS' : C.L >= 170 ? 'pickupX' : 'pickupD';
     if (BY_PRESET[C.presetId]) return BY_PRESET[C.presetId];
     var L = C.L;
     return L <= 330 ? 'pickup' : L <= 480 ? 'truck4' : L <= 680 ? 'truck6' : L <= 1000 ? 'truck10' : 'container';
@@ -25,6 +26,9 @@
   /** Drawing dimensions (cm): deck height, wheel radius, tyre width, cab length / roof height. */
   LP.VEHICLE_DIMS = {
     pickup: { deck: 80, r: 34, tw: 22, cabL: 235, cabTop: 185, style: 'pickup' },
+    pickupS: { deck: 80, r: 34, tw: 22, cabL: 245, cabTop: 180, style: 'pickup', open: true },   // single cab
+    pickupX: { deck: 80, r: 34, tw: 22, cabL: 290, cabTop: 180, style: 'pickup', open: true },   // extended cab
+    pickupD: { deck: 80, r: 34, tw: 22, cabL: 325, cabTop: 182, style: 'pickup', open: true },   // double cab
     truck4: { deck: 95, r: 39, tw: 24, cabL: 165, cabTop: 225, style: 'cabover' },
     truck6: { deck: 110, r: 48, tw: 26, cabL: 185, cabTop: 275, style: 'cabover' },
     truck10: { deck: 122, r: 52, tw: 28, cabL: 205, cabTop: 300, style: 'cabover' },
@@ -35,6 +39,9 @@
   /** Default tare (unladen weight carried by each axle group) and limits, kg. */
   var DEFAULTS = {
     pickup: { gvw: 3150, body: 250, groups: { front: [1150, 1400], rear: [550, 2100] } },
+    pickupS: { gvw: 2950, body: 90, groups: { front: [1050, 1300], rear: [600, 2000] } },
+    pickupX: { gvw: 2950, body: 80, groups: { front: [1100, 1300], rear: [650, 1950] } },
+    pickupD: { gvw: 2950, body: 70, groups: { front: [1150, 1350], rear: [700, 1900] } },
     truck4: { gvw: 9500, body: 500, groups: { front: [1500, 3000], rear: [900, 6500] } },
     truck6: { gvw: 15000, body: 1000, groups: { front: [2600, 6000], rear: [1600, 10000] } },
     truck10: { gvw: 25000, body: 1500, groups: { front: [3600, 6500], rear: [4200, 20000] } },
@@ -47,7 +54,7 @@
     var d = LP.VEHICLE_DIMS[type];
     if (!d || d.style === 'none') return null;   // no axles (container on the ground)
     var L = C.L, r = d.r;
-    var gap = type === 'trailer' ? 34 : 12, y1 = -gap, y0 = y1 - d.cabL;
+    var gap = type === 'trailer' ? 34 : d.open ? 6 : 12, y1 = -gap, y0 = y1 - d.cabL;
     var steer = y0 + (d.style === 'pickup' ? 62 : d.cabL * 0.42);
     var out = { type: type, cabFront: y0, cabRear: y1, axles: [], groups: [] };
     function grp(key, ys, dual) {
@@ -64,6 +71,7 @@
     } else {
       grp('front', [steer], false);
       if (type === 'pickup') grp('rear', [L * 0.5], false);
+      else if (d.open) grp('rear', [C.bed && C.bed.archY != null ? +C.bed.archY : L * 0.55], false);   // axle under the wheel arch
       else if (type === 'truck4') grp('rear', [L * 0.64], false);
       else if (type === 'truck6') grp('rear', [L * 0.66], true);
       else { var a1 = L * 0.6; grp('rear', [a1, a1 + r * 2 + 18], true); }

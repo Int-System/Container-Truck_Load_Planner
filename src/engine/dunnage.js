@@ -48,10 +48,11 @@ LPEngineParts.push(function dunnage(E) {
    */
   E.dunnagePlan = function (C, placements, specs, cfgIn) {
     var cfg = cfgOf(cfgIn), out = { gaps: [], items: [], totalWeight: 0, warnings: [] };
-    var ps = (placements || []).filter(function (p) { return p.l > 0 && p.w > 0; });
-    if (!ps.length) return out;
+    var cargoPs = (placements || []).filter(function (p) { return p.l > 0 && p.w > 0; });
+    if (!cargoPs.length) return out;
+    var ps = cargoPs.concat(E.obstaclePlacements ? E.obstaclePlacements(C) : []);
     var W = C.W, L = C.L, step = 10;
-    var maxY = ps.reduce(function (m, p) { return Math.max(m, p.y + p.l); }, 0);
+    var maxY = cargoPs.reduce(function (m, p) { return Math.max(m, p.y + p.l); }, 0);
 
     // 1. slice the loaded length; per slice: occupied x-intervals (with stack height) → voids
     var slices = [];
@@ -116,7 +117,8 @@ LPEngineParts.push(function dunnage(E) {
       if (r.h > 0) out.gaps.push(r);
     });
     // 3. door void
-    if (L - maxY > cfg.minGap) {
+    var openBed = !!(C.bed && +C.bed.wallH > 0);
+    if (!openBed && L - maxY > cfg.minGap) {
       var hd = heightNear(maxY - 15, 15);
       out.gaps.push({ type: 'door', x0: 0, x1: W, y0: maxY, y1: L, h: hd, t: L - maxY, faceW: W });
     }
@@ -150,18 +152,40 @@ LPEngineParts.push(function dunnage(E) {
         }
       }
     });
+    // 4b. open pickup bed: anything above the side walls must be strapped down and covered
+    if (openBed) {
+      var wallH = +C.bed.wallH, top = cargoPs.reduce(function (m, p) { return Math.max(m, p.z + p.h); }, 0);
+      var minY = cargoPs.reduce(function (m, p) { return Math.min(m, p.y); }, Infinity), over = top - wallH;
+      if (over > cfg.minGap) {
+        var run = maxY - minY, nA = Math.max(2, Math.ceil(run / 90)), up = Math.max(0, over);
+        var gA = { id: 'gS1', type: 'top', solution: 'strap', x0: 0, x1: W, y0: minY, y1: maxY, h: top, t: Math.round(over), faceW: W, shapes: [] };
+        gA.qty = nA; gA.len = Math.ceil((W + 2 * up + 80) / 50) * 50;          // round up to 0.5 m
+        for (var a = 0; a < nA; a++) gA.shapes.push({ kind: 'strap', y: minY + run * (a + 0.5) / nA, top: top, wall: wallH, x0: 0, x1: W });
+        out.gaps.push(gA);
+        if (over > 30) {                                                         // tall load: also lash lengthwise
+          var gL = { id: 'gS2', type: 'top', solution: 'strapL', x0: 0, x1: W, y0: minY, y1: maxY, h: top, t: Math.round(over), faceW: run, shapes: [] };
+          gL.qty = 2; gL.len = Math.ceil((L + 2 * up + 80) / 50) * 50;
+          [0.3, 0.7].forEach(function (f) { gL.shapes.push({ kind: 'strapL', x: W * f, top: top, wall: wallH, y0: 0, y1: L }); });
+          out.gaps.push(gL);
+        }
+        out.gaps.push({ id: 'gS3', type: 'top', solution: 'tarp', x0: 0, x1: W, y0: minY, y1: maxY, h: top, t: Math.round(over), faceW: W, qty: 1, shapes: [] });
+        out.warnings.push({ code: 'dunOverWall', severity: 'info', params: { h: Math.round(over) } });
+      }
+    }
     // 5. bill of materials
     var bom = {};
     out.gaps.forEach(function (g) {
-      var key = g.solution === 'bag' ? 'bag|' + g.bag.join('x') : 'timber|' + Math.round(g.len);
+      var key = g.solution === 'bag' ? 'bag|' + g.bag.join('x') : g.solution + '|' + Math.round(g.len || 0);
       if (!bom[key]) bom[key] = g.solution === 'bag'
         ? { kind: 'bag', size: g.bag, qty: 0, unitKg: g.bag[0] * g.bag[1] / 1e4 * cfg.bagKgPerM2, gaps: [] }
-        : { kind: 'timber', len: Math.round(g.len), qty: 0, unitKg: g.len / 100 * cfg.timberKgPerM, gaps: [] };
+        : g.solution === 'timber' ? { kind: 'timber', len: Math.round(g.len), qty: 0, unitKg: g.len / 100 * cfg.timberKgPerM, gaps: [] }
+        : g.solution === 'tarp' ? { kind: 'tarp', qty: 0, unitKg: 3, gaps: [] }
+        : { kind: g.solution, len: Math.round(g.len), qty: 0, unitKg: 0.9, gaps: [] };      // ratchet strap ~0.9 kg
       bom[key].qty += g.qty;
       bom[key].gaps.push(g.id);
     });
     out.items = Object.keys(bom).map(function (k) { var it = bom[k]; it.weight = it.unitKg * it.qty; return it; })
-      .sort(function (a, b) { return (a.kind === 'bag' ? 0 : 1) - (b.kind === 'bag' ? 0 : 1); });
+      .sort(function (a, b) { var o = { strap: 0, strapL: 1, tarp: 2, bag: 3, timber: 4 }; return o[a.kind] - o[b.kind]; });
     out.totalWeight = out.items.reduce(function (s, it) { return s + it.weight; }, 0);
     return out;
   };

@@ -266,7 +266,7 @@
       containerG.add(flatG);
       var containerG0 = containerG;
       containerG = flatG;
-      var floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshLambertMaterial({ color: 0x9aa4b2 }));
+      var floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshLambertMaterial({ color: C.bed && +C.bed.wallH > 0 ? 0x4a5160 : 0x9aa4b2 }));
       floor.rotation.x = -Math.PI / 2;
       floor.position.y = -0.3;
       containerG.add(floor);
@@ -286,48 +286,85 @@
         mesh.renderOrder = 5;
         containerG.add(mesh);
       }
-      wall(W, H, new THREE.Vector3(-L / 2, H / 2, 0), [0, Math.PI / 2, 0]);        // front wall
-      wall(L, H, new THREE.Vector3(0, H / 2, W / 2));                               // left wall (x=0)
-      wall(L, H, new THREE.Vector3(0, H / 2, -W / 2));                              // right wall
-      wall(L, W, new THREE.Vector3(0, H, 0), [-Math.PI / 2, 0, 0]);                // roof
-      var box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(L, H, W)), new THREE.LineBasicMaterial({ color: 0x334155 }));
-      box.position.y = H / 2;
-      containerG.add(box);
-      // door frame and opened door leaves
-      var doorMat = new THREE.MeshLambertMaterial({ color: 0xea580c, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
-      var t = Math.max(2, W * 0.012);
-      var DW = Math.min(C.doorW || W, W), DH = Math.min(C.doorH || H, H);
-      [DW / 2, -DW / 2].forEach(function (zEdge, i) {
-        var leaf = new THREE.Mesh(new THREE.BoxGeometry(DW / 2, DH, t), doorMat);
-        var hinge = new THREE.Group();
-        hinge.position.set(L / 2, DH / 2, zEdge);
-        leaf.position.set(0, 0, (i === 0 ? -1 : 1) * DW / 4);
-        hinge.add(leaf);
-        hinge.rotation.y = (i === 0 ? -1 : 1) * Math.PI * 0.62;
-        containerG.add(hinge);
-      });
-      // clear door opening + the header / jambs that make it smaller than the inside
-      var frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(DW, DH)), new THREE.LineBasicMaterial({ color: 0xea580c }));
-      frame.rotation.y = Math.PI / 2;
-      frame.position.set(L / 2 + 0.5, DH / 2, 0);
-      containerG.add(frame);
-      var lipMat = new THREE.MeshLambertMaterial({ color: 0x64748b, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-      function lip(w, h, y, z) {
-        var m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), lipMat);
-        m.rotation.y = Math.PI / 2;
-        m.position.set(L / 2 + 0.3, y, z);
-        containerG.add(m);
+      var bed = C.bed && +C.bed.wallH > 0 ? C.bed : null;
+      if (bed) {
+        // open pickup bed: low side walls + closed tailgate, no roof; dashed box = max load height
+        var WH = Math.min(+bed.wallH, H);
+        wall(W, WH, new THREE.Vector3(-L / 2, WH / 2, 0), [0, Math.PI / 2, 0]);
+        wall(L, WH, new THREE.Vector3(0, WH / 2, W / 2));
+        wall(L, WH, new THREE.Vector3(0, WH / 2, -W / 2));
+        wall(W, WH, new THREE.Vector3(L / 2, WH / 2, 0), [0, Math.PI / 2, 0]);
+        var low = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(L, WH, W)), new THREE.LineBasicMaterial({ color: 0x334155 }));
+        low.position.y = WH / 2;
+        containerG.add(low);
+        var limBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(L, H, W)), new THREE.LineDashedMaterial({ color: 0xe24b4a, dashSize: 10, gapSize: 6 }));
+        limBox.position.y = H / 2;
+        limBox.computeLineDistances();
+        containerG.add(limBox);
+        var limTop = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshBasicMaterial({ color: 0xe24b4a, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false }));
+        limTop.rotation.x = -Math.PI / 2;
+        limTop.position.y = H;
+        containerG.add(limTop);
+      } else {
+        wall(W, H, new THREE.Vector3(-L / 2, H / 2, 0), [0, Math.PI / 2, 0]);        // front wall
+        wall(L, H, new THREE.Vector3(0, H / 2, W / 2));                               // left wall (x=0)
+        wall(L, H, new THREE.Vector3(0, H / 2, -W / 2));                              // right wall
+        wall(L, W, new THREE.Vector3(0, H, 0), [-Math.PI / 2, 0, 0]);                // roof
+        var box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(L, H, W)), new THREE.LineBasicMaterial({ color: 0x334155 }));
+        box.position.y = H / 2;
+        containerG.add(box);
+        // door frame and opened door leaves
+        var doorMat = new THREE.MeshLambertMaterial({ color: 0xea580c, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+        var t = Math.max(2, W * 0.012);
+        var DW = Math.min(C.doorW || W, W), DH = Math.min(C.doorH || H, H);
+        [DW / 2, -DW / 2].forEach(function (zEdge, i) {
+          var leaf = new THREE.Mesh(new THREE.BoxGeometry(DW / 2, DH, t), doorMat);
+          var hinge = new THREE.Group();
+          hinge.position.set(L / 2, DH / 2, zEdge);
+          leaf.position.set(0, 0, (i === 0 ? -1 : 1) * DW / 4);
+          hinge.add(leaf);
+          hinge.rotation.y = (i === 0 ? -1 : 1) * Math.PI * 0.62;
+          containerG.add(hinge);
+        });
+        // clear door opening + the header / jambs that make it smaller than the inside
+        var frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(DW, DH)), new THREE.LineBasicMaterial({ color: 0xea580c }));
+        frame.rotation.y = Math.PI / 2;
+        frame.position.set(L / 2 + 0.5, DH / 2, 0);
+        containerG.add(frame);
+        var lipMat = new THREE.MeshLambertMaterial({ color: 0x64748b, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+        function lip(w, h, y, z) {
+          var m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), lipMat);
+          m.rotation.y = Math.PI / 2;
+          m.position.set(L / 2 + 0.3, y, z);
+          containerG.add(m);
+        }
+        if (H - DH > 0.5) lip(W, H - DH, DH + (H - DH) / 2, 0);
+        if (W - DW > 0.5) [-1, 1].forEach(function (s) { lip((W - DW) / 2, DH, DH / 2, s * (DW / 2 + (W - DW) / 4)); });
       }
-      if (H - DH > 0.5) lip(W, H - DH, DH + (H - DH) / 2, 0);
-      if (W - DW > 0.5) [-1, 1].forEach(function (s) { lip((W - DW) / 2, DH, DH / 2, s * (DW / 2 + (W - DW) / 4)); });
+      // keep-out zones (wheel arches of an open pickup bed)
+      var archMat = new THREE.MeshLambertMaterial({ color: 0x6b7280 });
+      ((root.LPEngine && root.LPEngine.obstaclesOf) ? root.LPEngine.obstaclesOf(C) : []).forEach(function (o) {
+        var am = new THREE.Mesh(new THREE.BoxGeometry(o.l, o.h, o.w), archMat);
+        am.position.set(o.y + o.l / 2 - L / 2, (o.z || 0) + o.h / 2, W / 2 - o.x - o.w / 2);
+        am.castShadow = true; am.receiveShadow = true;
+        containerG.add(am);
+        var ae = new THREE.LineSegments(new THREE.EdgesGeometry(am.geometry), new THREE.LineBasicMaterial({ color: 0xe24b4a }));
+        ae.position.copy(am.position);
+        containerG.add(ae);
+      });
       containerG = containerG0;
       var sz = Math.max(W * 0.9, 120);
-      var dl = textSprite(LP.t('doorHere'), '#ea580c', sz);
+      var dl = textSprite(LP.t(bed ? 'tailgateHere' : 'doorHere'), '#ea580c', sz);
       dl.position.set(L / 2 + sz * 0.15, H + sz * 0.22, 0);
       containerG.add(dl);
-      var fl = textSprite(LP.t('frontHere'), '#334155', sz);
+      var fl = textSprite(LP.t(bed ? 'frontBed' : 'frontHere'), '#334155', sz);
       fl.position.set(-L / 2, H + sz * 0.22, 0);
       containerG.add(fl);
+      if (bed) {
+        var mh = textSprite(LP.t('bedMaxH', { h: LP.units.fmt(H, 0) }), '#e24b4a', sz * 0.9);
+        mh.position.set(0, H + sz * 0.1, -W / 2);
+        containerG.add(mh);
+      }
       var ll = textSprite(LP.t('left'), '#475569', sz * 0.6);
       ll.position.set(0, 4, W / 2 + sz * 0.25);
       containerG.add(ll);
@@ -613,6 +650,7 @@
         bag: new THREE.MeshStandardMaterial({ color: 0xdfe7ef, roughness: 0.35, metalness: 0.05 }),
         valve: new THREE.MeshStandardMaterial({ color: 0xd85a30, roughness: 0.5 }),
         timber: new THREE.MeshStandardMaterial({ color: 0xc8a06a, roughness: 0.9 }),
+        strap: new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 }),
         gapFill: new THREE.MeshBasicMaterial({ color: 0xe24b4a, transparent: true, opacity: 0.06, depthWrite: false }),
         gapLine: new THREE.LineDashedMaterial({ color: 0xe24b4a, dashSize: 8, gapSize: 5 })
       };
@@ -644,12 +682,29 @@
         fill.position.set((g.y0 + g.y1) / 2 - C.L / 2, gh / 2, C.W / 2 - (g.x0 + g.x1) / 2);
         fill.scale.set(Math.max(1, g.y1 - g.y0), gh, Math.max(1, g.x1 - g.x0));
         fill.userData.gap = g.id; fill.renderOrder = 2;
-        dunG.add(fill);
+        if (g.type !== 'top') dunG.add(fill);          // straps / tarp: no void box
         var edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(1, g.y1 - g.y0), gh, Math.max(1, g.x1 - g.x0))), M.gapLine);
         edges.position.copy(fill.position);
         edges.computeLineDistances();
-        dunG.add(edges);
+        if (g.type !== 'top') dunG.add(edges);
         (g.shapes || []).forEach(function (sh) {
+          if (sh.kind === 'strap' || sh.kind === 'strapL') {     // ratchet strap over the load: up · across · down
+            var up = Math.max(1, sh.top - sh.wall), th = 1.6, segs = [];
+            if (sh.kind === 'strap') {
+              var sx = sh.y - C.L / 2;
+              segs.push([sx, sh.wall + up / 2, C.W / 2 + th, th, up, th], [sx, sh.top + th / 2, 0, 5, th, C.W + th * 2], [sx, sh.wall + up / 2, -C.W / 2 - th, th, up, th]);
+            } else {
+              var sz = C.W / 2 - sh.x;
+              segs.push([-C.L / 2 - th, sh.wall + up / 2, sz, th, up, th], [0, sh.top + th / 2 + 1, sz, C.L + th * 2, th, 5], [C.L / 2 + th, sh.wall + up / 2, sz, th, up, th]);
+            }
+            segs.forEach(function (q) {
+              var sm = new THREE.Mesh(unitBox, M.strap.clone());
+              sm.position.set(q[0], q[1], q[2]); sm.scale.set(q[3], q[4], q[5]);
+              sm.userData.gap = g.id; sm.userData.clone = true;
+              dunG.add(sm);
+            });
+            return;
+          }
           var cx = sh.y + sh.l / 2 - C.L / 2, cy = sh.z + sh.h / 2, cz = C.W / 2 - sh.x - sh.w / 2, m;
           if (sh.kind === 'bag') {
             m = new THREE.Mesh(unitSphere, M.bag.clone());
@@ -931,12 +986,12 @@
       setContainer: function (c, veh) {
         if (veh) { vehicle.type = veh.type; vehicle.show = veh.show; vehicle.cabColor = veh.cabColor || null; vehicle.logo = veh.logo || null; vehicle.containerNo = veh.containerNo || ''; }
         var key = [c.W, c.L, c.H, vehicle.type, vehicle.show, LP.i18n.lang, c.doorW, c.doorH, vehicle.cabColor, vehicle.logo ? vehicle.logo.length + vehicle.logo.slice(-24) : '',
-          style, vehicle.containerNo, c.tare, c.maxGross].join('|');
+          style, vehicle.containerNo, c.tare, c.maxGross, c.bed ? JSON.stringify(c.bed) : ''].join('|');
         if (key === builtKey) return;
         var sizeChanged = !(c.W === C.W && c.L === C.L && c.H === C.H) || !builtKey;
         var vehChanged = builtKey && builtKey.split('|').slice(3, 5).join('|') !== [vehicle.type, vehicle.show].join('|');
         builtKey = key;
-        C = { W: c.W, L: c.L, H: c.H, doorW: c.doorW, doorH: c.doorH, tare: c.tare, maxGross: c.maxGross, containerNo: vehicle.containerNo };
+        C = { W: c.W, L: c.L, H: c.H, doorW: c.doorW, doorH: c.doorH, tare: c.tare, maxGross: c.maxGross, containerNo: vehicle.containerNo, bed: c.bed || null };
         buildContainer();
         if (sizeChanged || vehChanged) resetCamera();
       },

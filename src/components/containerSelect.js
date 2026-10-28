@@ -54,16 +54,17 @@
         dimField('cH', t('height'), U.round(C.H / 100, 3), 'm', 0.01) +
         '<div class="span3">' + dimField('cP', t('payload'), C.maxPayload, 'kg', 10) + '</div>' +
         '</div>' +
+        (C.bed ? bedSection(C) :
         '<div class="door-row"><span class="door-l">' + LP.icon('door') + t('doorOpening') + '</span>' +
         dimField('cDW', t('width'), U.round((C.doorW || C.W) / 100, 3), 'm', 0.01) +
-        dimField('cDH', t('height'), U.round((C.doorH || C.H) / 100, 3), 'm', 0.01) + '</div>' +
+        dimField('cDH', t('height'), U.round((C.doorH || C.H) / 100, 3), 'm', 0.01) + '</div>') +
         '<div class="cmeta"><span>' + t('volume') + ' <b>' + U.fmt(vol, 2) + ' m³</b></span><span>' + t('floorArea') + ' <b>' + U.fmt(C.W * C.L / 1e4, 2) + ' m²</b></span></div>' +
         '<details class="adv"><summary>' + LP.icon('sliders') + '<span>' + t('advanced') + '</span></summary>' +
         '<div class="grid2">' + dimField('cFL', t('floorLoad'), C.floorLoad || 0, 'kg/m²', 100) +
         (isBoxContainer(C) ? dimField('cTare', t('containerTare'), C.tare || 0, 'kg', 10) + dimField('cMG', t('maxGross'), C.maxGross || 0, 'kg', 10) : '') +
         '</div><div class="grid2">' + dimField('cCost', t('costTrip'), C.cost || 0, '฿', 100) +
         '<label class="fld"><span>' + t('vehicleType') + '</span><select id="cVeh">' +
-        [['', t('vehAuto') + ' (' + t('veh_' + LP.vehicleType(Object.assign({}, C, { vehicle: null }))) + ')'], ['pickup', t('veh_pickup')], ['truck4', t('veh_truck4')], ['truck6', t('veh_truck6')], ['truck10', t('veh_truck10')], ['trailer', t('veh_trailer')], ['container', t('veh_container')]].map(function (o) {
+        [['', t('vehAuto') + ' (' + t('veh_' + LP.vehicleType(Object.assign({}, C, { vehicle: null }))) + ')'], ['pickup', t('veh_pickup')], ['pickupS', t('veh_pickupS')], ['pickupX', t('veh_pickupX')], ['pickupD', t('veh_pickupD')], ['truck4', t('veh_truck4')], ['truck6', t('veh_truck6')], ['truck10', t('veh_truck10')], ['trailer', t('veh_trailer')], ['container', t('veh_container')]].map(function (o) {
           return '<option value="' + o[0] + '"' + ((C.vehicle || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
         }).join('') + '</select></label></div>' +
         axleEditor(C) +
@@ -72,6 +73,15 @@
       bind();
       var chip = document.getElementById('chipContainer');
       if (chip) chip.textContent = (C.nameTh && LP.i18n.lang === 'th' ? C.nameTh : C.name) || '';
+    }
+
+    /** Open pickup bed: side-wall height, wheel arches (keep-out) and the height limit from the road. */
+    var BED_FIELDS = [['wallH', 'bedWall'], ['deck', 'bedDeck'], ['maxRoadH', 'bedRoadH'], ['archW', 'bedArchW'], ['archL', 'bedArchL'], ['archH', 'bedArchH'], ['archY', 'bedArchY']];
+    function bedSection(C) {
+      var b = C.bed || {};
+      return '<div class="bed-sec"><div class="pop-h sm">' + LP.icon('truck') + t('bedTitle') + '</div><div class="grid2">' +
+        BED_FIELDS.map(function (f) { return dimField('bed_' + f[0], t(f[1]), b[f[0]] != null ? b[f[0]] : '', 'cm', 1); }).join('') + '</div>' +
+        '<div class="muted small">' + esc(t('bedNote', { h: U.fmt(C.H, 0), road: U.fmt(+b.maxRoadH || 0, 0), deck: U.fmt(+b.deck || 0, 0) })) + '</div></div>';
     }
 
     /** Shipping container (own tare / max gross / VGM) rather than a truck body. */
@@ -140,14 +150,32 @@
           S.change(function (s) { var c = Object.assign({}, s.container); c[key] = v; s.container = c; });
         });
       });
+      BED_FIELDS.forEach(function (f) {
+        var inp = el.querySelector('#bed_' + f[0]);
+        if (inp) inp.addEventListener('change', function (e) {
+          var v = parseFloat(e.target.value);
+          if (!(v >= 0)) return;
+          S.change(function (s) {
+            var c = Object.assign({}, s.container), b = Object.assign({}, c.bed || {});
+            b[f[0]] = v;
+            c.bed = b;
+            // the load height follows "total height from the road − bed floor height"
+            if ((f[0] === 'deck' || f[0] === 'maxRoadH') && b.maxRoadH > 0) c.H = Math.max(10, b.maxRoadH - (+b.deck || 0));
+            s.container = c;
+          });
+        });
+      });
       ['cW', 'cL', 'cH', 'cP', 'cCost', 'cDW', 'cDH'].forEach(function (id) {
-        el.querySelector('#' + id).addEventListener('change', function (e) {
+        var inp0 = el.querySelector('#' + id);
+        if (!inp0) return;
+        inp0.addEventListener('change', function (e) {
           var v = parseFloat(e.target.value);
           if (!(v >= 0)) return;
           S.change(function (s) {
             var c = Object.assign({}, s.container);
             var oldW = c.W, oldH = c.H;
             if (id === 'cW') c.W = v * 100; if (id === 'cL') c.L = v * 100; if (id === 'cH') c.H = v * 100;
+            if (id === 'cH' && c.bed) c.bed = Object.assign({}, c.bed, { maxRoadH: c.H + (+c.bed.deck || 0) });
             if (id === 'cP') c.maxPayload = v; if (id === 'cCost') c.cost = v;
             if (id === 'cDW') c.doorW = Math.min(v * 100, c.W);
             if (id === 'cDH') c.doorH = Math.min(v * 100, c.H);
@@ -169,7 +197,7 @@
         var name = prompt(t('saveAsPreset'), C.name || t('custom'));
         if (!name) return;
         var id = 'u' + Date.now().toString(36);
-        S.saveCustomPresets(S.customPresets().concat([{ id: id, group: 'custom', name: name, W: C.W, L: C.L, H: C.H, maxPayload: C.maxPayload, cost: C.cost || 0, doorW: C.doorW, doorH: C.doorH, vehicle: C.vehicle || LP.vehicleType(C), axle: C.axle || null, tare: C.tare || 0, maxGross: C.maxGross || 0, floorLoad: C.floorLoad || 0 }]));
+        S.saveCustomPresets(S.customPresets().concat([{ id: id, group: 'custom', name: name, W: C.W, L: C.L, H: C.H, maxPayload: C.maxPayload, cost: C.cost || 0, doorW: C.doorW, doorH: C.doorH, vehicle: C.vehicle || LP.vehicleType(C), axle: C.axle || null, tare: C.tare || 0, maxGross: C.maxGross || 0, floorLoad: C.floorLoad || 0, bed: C.bed || null }]));
         tab = 'custom';
         S.change(function (s) { s.container = Object.assign({}, s.container, { presetId: id, name: name, nameTh: null }); });
       });

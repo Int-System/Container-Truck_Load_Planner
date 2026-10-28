@@ -34,7 +34,7 @@
       plan.items.map(function (it) {
         return '<tr><td>' + esc(LP.dunnageItemName(it)) + '</td><td class="n">' + it.qty + '</td><td>' + esc(it.gaps.map(function (id) { return LP.dunnageGapText(byId[id]); }).join(' · ')) + '</td><td class="n">' + U.fmt(it.weight, 1) + '</td></tr>';
       }).join('') + '<tr><td><b>' + t('total') + '</b></td><td></td><td></td><td class="n"><b>' + U.fmt(plan.totalWeight, 1) + '</b></td></tr></table>' +
-      plan.warnings.slice(0, 1).map(function (w) { return '<p class="warning">' + esc(t('w_dunWide', w.params)) + '</p>'; }).join('') +
+      plan.warnings.map(function (w) { return '<p class="warning">' + esc(t(w.code === 'dunOverWall' ? 'w_dunOverWall' : 'w_dunWide', w.params)) + '</p>'; }).join('') +
       '<p style="color:#666">' + esc(t('dunNote')) + '</p>';
   }
 
@@ -109,12 +109,13 @@
       var last = i === N - 1, lo = i === 0 ? -1e9 : g.y0, hi = last ? 1e9 : (d.steps[i + 1] ? d.steps[i + 1].y0 : g.y1);
       var mine = plan.gaps.map(function (x) {
         if (x.type === 'door') return last ? { x: x, n: x.qty } : null;
+        if (x.type === 'top') return i === 0 ? { x: x, n: x.qty } : null;      // straps / tarp: prepare before loading
         var n = (x.shapes || []).filter(function (sh) { var c = sh.y + sh.l / 2; return c >= lo && c < hi; }).length;
         return n ? { x: x, n: n } : null;
       }).filter(Boolean);
       if (!mine.length) return '';
       return '<table class="dun"><tr><th colspan="3">' + esc(t('dunStepTitle')) + '</th></tr>' + mine.map(function (m) {
-        var x = m.x, name = x.solution === 'bag' ? t('dunBag', { s: x.bag[0] + '×' + x.bag[1] }) : t('dunTimber', { len: U.fmt(x.len, 0) });
+        var x = m.x, name = LP.dunnageItemName(x);
         return '<tr><td>' + esc(name) + '</td><td>' + esc(LP.dunnageGapText(x)) + '</td><td class="n"><b>' + m.n + '</b></td></tr>';
       }).join('') + '</table>';
     }

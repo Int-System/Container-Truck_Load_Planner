@@ -74,6 +74,15 @@
     for (var gv = step; gv < d.V; gv += step) g.push('M0 ' + (d.V - gv) + 'H' + d.U);
     out.push('<path d="' + g.join('') + '" stroke="#94a3b8" stroke-opacity="0.35" stroke-width="0.6" vector-effect="non-scaling-stroke" fill="none"/>');
 
+    // keep-out zones (wheel arches of an open pickup bed): hatched, behind the cargo
+    var obs = root.LPEngine && root.LPEngine.obstaclesOf ? root.LPEngine.obstaclesOf(C) : [];
+    if (obs.length) {
+      out.push('<defs><pattern id="obsHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#9ca3af" fill-opacity="0.45"/><line x1="0" y1="0" x2="0" y2="8" stroke="#e24b4a" stroke-width="2.5"/></pattern></defs>');
+      obs.forEach(function (o) {
+        var po = project(view, { x: o.x, y: o.y, z: o.z || 0, w: o.w, l: o.l, h: o.h }, C);
+        out.push('<rect x="' + r1(po.u) + '" y="' + r1(po.v) + '" width="' + r1(po.du) + '" height="' + r1(po.dv) + '" fill="url(#obsHatch)" stroke="#e24b4a" stroke-width="1.2" vector-effect="non-scaling-stroke"><title>' + esc(t('wheelArch')) + '</title></rect>');
+      });
+    }
     var maxW = ctx.colorBy === 'weight' ? LP.maxWeight(ctx.placements) : 0, minW = ctx.colorBy === 'weight' ? LP.minWeight(ctx.placements) : 0;
     var list = ctx.placements.filter(function (p) {
       if (ctx.hiddenSku && ctx.hiddenSku[p.sku]) return false;
@@ -176,8 +185,8 @@
       lab(0, -fs * 0.6, '◀ ' + t('left'), 'start');
       lab(d.U, -fs * 0.6, t('right') + ' ▶', 'end');
     } else {
-      lab(0, -fs * 0.6, '◀ ' + t('frontHere'), 'start');
-      lab(d.U, -fs * 0.6, t('doorHere') + ' ▶', 'end', '#ea580c');
+      lab(0, -fs * 0.6, '◀ ' + t(C.bed ? 'frontBed' : 'frontHere'), 'start');
+      lab(d.U, -fs * 0.6, t(C.bed ? 'tailgateHere' : 'doorHere') + ' ▶', 'end', '#ea580c');
       out.push('<rect x="' + r1(d.U - 2) + '" y="0" width="' + r1(Math.max(4, fs * 0.35)) + '" height="' + d.V + '" fill="#ea580c" fill-opacity="0.85"/>');
       if (view === 'top') {
         lab(d.U + fs * 0.5, d.V - fs * 0.2, t('left'), 'start');

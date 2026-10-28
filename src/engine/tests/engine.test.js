@@ -317,6 +317,26 @@
     return r.gaps.length + ' void(s): ' + r.gaps.map(function (g) { return g.type + ' ' + Math.round(g.t); }).join(', ');
   });
 
+  // ---- Open pickup bed (wheel arches = keep-out, straps above the walls) ------------------
+  test('Open pickup: cargo avoids the wheel arches, can sit on them, and gets strapped above the walls', function () {
+    var C = { W: 152, L: 230, H: 170, maxPayload: 1100, bed: { wallH: 47, archW: 21, archL: 90, archH: 25, archY: 130 } };
+    var obs = E.obstaclePlacements(C);
+    assert(obs.length === 2 && obs[0].y === 85 && obs[1].x === 131, 'arches ' + JSON.stringify(obs));
+    var cargo = [sku({ id: 'A', w: 50, l: 40, h: 35, weight: 14, qty: 36, rotation: 'all' })];
+    var r = E.pack(C, cargo, { timeLimit: 500, seed: 7 });
+    assert(r.placements.length > 20, 'packed only ' + r.placements.length);
+    assert(r.placements.every(function (p) { return !p.obstacle && obs.every(function (o) { return !E.intersects(p, o); }); }), 'an item overlaps a wheel arch');
+    var v = E.validate(C, r.placements, { A: cargo[0] }, {});
+    var bad = v.issues.filter(function (i) { return i.severity === 'error'; });
+    assert(!bad.length, 'validator errors: ' + JSON.stringify(bad.map(function (i) { return i.code; })));
+    assert(E.quickCheck(C, { uid: 'q', x: 0, y: 100, z: 0, w: 30, l: 30, h: 20 }, []) === 'collision', 'quickCheck ignores the arch');
+    var dn = E.dunnagePlan(C, r.placements, {}, {});
+    var top = Math.max.apply(null, r.placements.map(function (p) { return p.z + p.h; }));
+    assert(top <= 47 || dn.items.some(function (it) { return it.kind === 'strap'; }) && dn.items.some(function (it) { return it.kind === 'tarp'; }), 'no straps for a load ' + top + ' cm high');
+    assert(!dn.gaps.some(function (g) { return g.type === 'door'; }), 'open bed should not get door timbers');
+    return r.placements.length + ' pcs · top ' + top + ' cm · ' + dn.items.map(function (it) { return it.kind + '×' + it.qty; }).join(', ');
+  });
+
   // ---- Door opening ----------------------------------------------------------------------
   test('Door: items taller than the door are refused (fixed) or laid down (rotatable)', function () {
     var C = { W: 235, L: 590, H: 239, maxPayload: 28000, doorW: 234, doorH: 228 };

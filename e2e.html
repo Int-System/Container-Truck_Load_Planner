@@ -420,6 +420,23 @@
     return plan.items.map(function (it) { return it.kind + ' ×' + it.qty; }).join(', ') + ' · VGM +' + kg + ' kg';
   });
 
+  test('Open pickup bed: arches kept clear, bed settings, straps suggested', async function () {
+    await W.LPApp.loadSample('pickupOpen', true);
+    await idle();
+    var C = S().state.container, obs = W.LPEngine.obstaclePlacements(C);
+    assert(C.bed && obs.length === 2, 'open-bed preset without wheel arches');
+    assert(placements().length > 20 && placements().every(function (p) { return obs.every(function (o) { return !W.LPEngine.intersects(p, o); }); }), 'cargo overlaps a wheel arch');
+    assert($('.bed-sec') && !$('.door-row'), 'bed settings should replace the door opening');
+    var road = need('#bed_maxRoadH');
+    road.value = '230'; road.dispatchEvent(new W.Event('change', { bubbles: true }));
+    await wait(150);
+    assert(Math.round(S().state.container.H) === 150, 'max height did not follow road height − bed floor (got ' + S().state.container.H + ')');
+    click('[data-tab="summary"]');
+    await until(function () { return $$('#summary .dun-row').some(function (r) { return /ratchet/.test(r.textContent); }); }, 4000, 'strap suggestion');
+    noErrors();
+    return placements().length + ' pcs · H ' + S().state.container.H + ' cm after the road-height change';
+  });
+
   test('Tablet 768×1024 and phone 375×812: nothing overflows sideways', async function () {
     var res = [];
     for (var vp of [[768, 1024], [375, 812]]) {

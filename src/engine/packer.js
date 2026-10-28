@@ -53,6 +53,8 @@ LPEngineParts.push(function packer(E) {
   function prepare(C, cargo, opts) {
     var specs = {}, fixedCount = {};
     cargo.forEach(function (c) { specs[c.id] = c; });
+    var obstacles = E.obstaclePlacements(C);           // wheel arches etc. (locked, weightless)
+    if (obstacles.length) specs.__obs = E.OBSTACLE_SPEC;
     (opts.fixed || []).forEach(function (p) { fixedCount[p.sku] = (fixedCount[p.sku] || 0) + 1; });
     var types = [], doorBlocked = [];
     cargo.forEach(function (c) {
@@ -80,7 +82,7 @@ LPEngineParts.push(function packer(E) {
     // sequential loading: temperature zones (coldest first, at the front) and/or drop order (last drop first)
     types.forEach(function (t) { t.seqKey = (zoned ? t.zone * 1000 : 0) + (delivery ? maxDrop - t.drop : 0); });
     return {
-      C: C, specs: specs, types: types, opts: opts, fixed: opts.fixed || [], doorBlocked: doorBlocked,
+      C: C, specs: specs, types: types, opts: opts, fixed: (opts.fixed || []).concat(obstacles), doorBlocked: doorBlocked,
       multiDrop: Object.keys(drops).length > 1, variantCache: new Map(), zoned: zoned,
       sequential: zoned || delivery, hasSeg: types.some(function (t) { return t.seg; }) || (opts.fixed || []).some(function (p) { return specs[p.sku] && specs[p.sku].segGroup; })
     };
@@ -629,7 +631,7 @@ LPEngineParts.push(function packer(E) {
   var runCounter = 0;
   function finalize(ctx, best, iter, ms) {
     var C = ctx.C, run = (++runCounter).toString(36) + Date.now().toString(36).slice(-4);
-    var placements = best.placed;
+    var placements = best.placed.filter(function (p) { return !p.obstacle; });
     var shifted = false;
     if (ctx.opts.objective === 'balance' && !ctx.fixed.length && placements.length) {
       // centre the whole load (rigid translation keeps every constraint valid)
@@ -721,6 +723,11 @@ LPEngineParts.push(function packer(E) {
   /** First feasible position (front→door, bottom→top) for one item — used by manual "add". */
   E.findSpot = function (C, placements, spec, opts) {
     opts = opts || {};
+    var obs = E.obstaclePlacements(C);
+    if (obs.length) {
+      placements = obs.concat(placements);
+      opts = Object.assign({}, opts, { specs: Object.assign({ __obs: E.OBSTACLE_SPEC }, opts.specs || {}) });
+    }
     var lm = new E.LoadModel(opts.specs || {}, opts);
     placements.slice().sort(function (a, b) { return a.z - b.z; }).forEach(function (p) { lm.add(p); });
     var pts = [{ x: 0, y: 0, z: 0 }];

@@ -154,5 +154,28 @@ LPEngineParts.push(function geometry(E) {
   E.pruneSpaces = function (spaces, minDim) {
     return spaces.filter(function (s) { return !tooSmall(s, minDim); });
   };
+
+  /**
+   * Keep-out zones inside the load space (engine coords, cm). C.obstacles wins; otherwise an open pickup
+   * bed (C.bed) gets its two wheel arches: archW = how far each arch sticks in from the side wall,
+   * archL = length, archH = height above the bed floor, archY = arch centre measured from the front wall.
+   */
+  E.obstaclesOf = function (C) {
+    if (C && C.obstacles) return C.obstacles;
+    var b = C && C.bed;
+    if (!b || !(+b.archW > 0) || !(+b.archH > 0)) return [];
+    var aw = Math.min(+b.archW, C.W / 2), al = +b.archL || 90, ah = Math.min(+b.archH, C.H);
+    var ay = b.archY != null && b.archY !== '' ? +b.archY : C.L * 0.55;
+    var y0 = Math.max(0, ay - al / 2), y1 = Math.min(C.L, ay + al / 2);
+    if (y1 - y0 < 1) return [];
+    return [{ x: 0, y: y0, z: 0, w: aw, l: y1 - y0, h: ah, kind: 'arch' }, { x: C.W - aw, y: y0, z: 0, w: aw, l: y1 - y0, h: ah, kind: 'arch' }];
+  };
+  /** Keep-out zones as locked pseudo-placements (sku '__obs', no weight) for the packer / validator. */
+  E.obstaclePlacements = function (C) {
+    return E.obstaclesOf(C).map(function (o, i) {
+      return { uid: '__obs' + i, sku: '__obs', x: o.x, y: o.y, z: o.z || 0, w: o.w, l: o.l, h: o.h, weight: 0, locked: true, obstacle: true };
+    });
+  };
+  E.OBSTACLE_SPEC = { id: '__obs', sku: '', pkg: 'box', stackable: true, maxLoad: 0, maxStack: 0, rotation: 'fixed', weight: 0 };
 });
 if (typeof module !== 'undefined' && module.exports) module.exports = LPEngineParts;

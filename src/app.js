@@ -342,7 +342,7 @@
     });
     x = Math.max(0, Math.min(C.W - p.w, snapAxis(x, p.w, ex)));
     y = Math.max(0, Math.min(C.L - p.l, snapAxis(y, p.l, ey)));
-    var z = ui.gravity ? E.dropZ({ uid: p.uid, x: x, y: y, w: p.w, l: p.l }, others, Infinity) : p.z;
+    var z = ui.gravity ? E.dropZ({ uid: p.uid, x: x, y: y, w: p.w, l: p.l }, others.concat(E.obstaclePlacements(S.state.container)), Infinity) : p.z;
     return { x: x, y: y, z: z };
   }
 
@@ -411,7 +411,7 @@
       var ors = orientationsOf(p), i = ors.findIndex(function (o) { return sameDims(o, p); });
       var cand = ors.slice(i + 1).concat(ors.slice(0, i + 1)).filter(function (o) { return Math.abs(o.h - p.h) > 1e-6; })[0];
       if (!cand) { LP.toast(t('rotUpright'), ''); return; }
-      mutateSelected(function (q) { q.w = cand.w; q.l = cand.l; q.h = cand.h; if (cand.ax) q.ax = cand.ax; clampInside(q); if (S.ui.gravity) q.z = E.dropZ(q, S.state.placements, Infinity); });
+      mutateSelected(function (q) { q.w = cand.w; q.l = cand.l; q.h = cand.h; if (cand.ax) q.ax = cand.ax; clampInside(q); if (S.ui.gravity) q.z = E.dropZ(q, S.state.placements.concat(E.obstaclePlacements(S.state.container)), Infinity); });
     },
     raise: function () { levelMove(1); },
     lower: function () { levelMove(-1); },
@@ -479,11 +479,11 @@
   }
   function nudge(dx, dy) {
     var p = selectedPlacement(); if (!p || p.locked) return;
-    mutateSelected(function (q) { q.x += dx; q.y += dy; clampInside(q); if (S.ui.gravity) q.z = E.dropZ(q, S.state.placements, Infinity); });
+    mutateSelected(function (q) { q.x += dx; q.y += dy; clampInside(q); if (S.ui.gravity) q.z = E.dropZ(q, S.state.placements.concat(E.obstaclePlacements(S.state.container)), Infinity); });
   }
 
   // ------------------------------------------------------------------ auto pack
-  function containerForEngine(C) { return { W: +C.W, L: +C.L, H: +C.H, maxPayload: +C.maxPayload || 0, doorW: +C.doorW || 0, doorH: +C.doorH || 0, floorLoad: +C.floorLoad || 0 }; }
+  function containerForEngine(C) { return { W: +C.W, L: +C.L, H: +C.H, maxPayload: +C.maxPayload || 0, doorW: +C.doorW || 0, doorH: +C.doorH || 0, floorLoad: +C.floorLoad || 0, bed: C.bed || null }; }
   function engineOpts(extra) {
     var st = S.state.settings, C = S.state.container;
     var o = {

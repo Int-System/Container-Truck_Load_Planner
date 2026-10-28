@@ -89,11 +89,20 @@
 
   /** Name / place texts for securing material (shared by the summary, the report and the step sheets). */
   LP.dunnageItemName = function (it) {
-    return it.kind === 'bag' ? LP.t('dunBag', { s: it.size[0] + '×' + it.size[1] }) : LP.t('dunTimber', { len: LP.units.fmt(it.len, 0) });
+    var t = LP.t, m = function (cm) { return LP.units.fmt(cm / 100, 1); };
+    if (it.kind === 'bag' || it.solution === 'bag') { var b = it.size || it.bag; return t('dunBag', { s: b[0] + '×' + b[1] }); }
+    if (it.kind === 'strap' || it.solution === 'strap') return t('dunStrap', { m: m(it.len) });
+    if (it.kind === 'strapL' || it.solution === 'strapL') return t('dunStrapL', { m: m(it.len) });
+    if (it.kind === 'tarp' || it.solution === 'tarp') return t('dunTarp');
+    return t('dunTimber', { len: LP.units.fmt(it.len, 0) });
+  };
+  LP.dunnageUnit = function (kind) {
+    return LP.t(kind === 'bag' ? 'dunUnitBag' : kind === 'timber' ? 'dunUnitTimber' : kind === 'tarp' ? 'dunUnitTarp' : 'dunUnitStrap');
   };
   LP.dunnageGapText = function (g) {
     var U = LP.units, t = LP.t, f = function (v) { return U.fmt(v, 0); };
     if (g.type === 'door') return t('dunAtDoor', { t: f(g.t) });
+    if (g.type === 'top') return t('dunOverWall', { h: f(g.t) });
     if (g.type === 'trans') return t('dunBetweenRows', { y: f(g.y0), t: f(g.t) });
     if (g.type === 'side') return t('dunSide', { side: t(g.x0 < 1 ? 'left' : 'right'), a: f(g.y0), b: f(g.y1), t: f(g.t) });
     return t('dunInner', { a: f(g.y0), b: f(g.y1), t: f(g.t) });
@@ -103,11 +112,14 @@
     plan.gaps.forEach(function (g) { byId[g.id] = g; });
     var rows = plan.items.map(function (it) {
       var where = it.gaps.map(function (id) { return LP.dunnageGapText(byId[id]); });
-      return '<div class="dun-row" data-dun-gaps="' + esc(it.gaps.join(',')) + '" title="' + esc(t('dunShowHint')) + '"><span class="dun-ic ' + it.kind + '">' + I(it.kind === 'bag' ? 'layers' : 'grid') + '</span>' +
+      var ic = it.kind === 'bag' ? 'layers' : it.kind === 'timber' ? 'grid' : it.kind === 'tarp' ? 'box' : 'magnet';
+      return '<div class="dun-row" data-dun-gaps="' + esc(it.gaps.join(',')) + '" title="' + esc(t('dunShowHint')) + '"><span class="dun-ic ' + it.kind + '">' + I(ic) + '</span>' +
         '<div class="dun-t"><b>' + esc(LP.dunnageItemName(it)) + '</b><small>' + esc(where.join(' · ')) + '</small></div>' +
-        '<span class="dun-q">' + it.qty + ' ' + esc(t(it.kind === 'bag' ? 'dunUnitBag' : 'dunUnitTimber')) + '</span></div>';
+        '<span class="dun-q">' + it.qty + ' ' + esc(LP.dunnageUnit(it.kind)) + '</span></div>';
     }).join('');
-    var warn = plan.warnings.length ? '<div class="dun-warn">' + I('alert') + esc(t('w_dunWide', { t: Math.max.apply(null, plan.warnings.map(function (w) { return w.params.t; })) })) + '</div>' : '';
+    var wide = plan.warnings.filter(function (w) { return w.code === 'dnWide'; }), top = plan.warnings.filter(function (w) { return w.code === 'dunOverWall'; })[0];
+    var warn = (wide.length ? '<div class="dun-warn">' + I('alert') + esc(t('w_dunWide', { t: Math.max.apply(null, wide.map(function (w) { return w.params.t; })) })) + '</div>' : '') +
+      (top ? '<div class="dun-warn">' + I('alert') + esc(t('w_dunOverWall', { h: top.params.h })) + '</div>' : '');
     return '<div class="dun">' + rows + warn +
       '<div class="dun-foot"><span>' + esc(t('dunTotal', { kg: U.fmt(plan.totalWeight, 1) })) + '</span><span class="dun-btns">' +
       '<button class="btn sm' + (shown ? ' on' : '') + '" data-dun-show aria-pressed="' + shown + '">' + I('eye') + t(shown ? 'dunHide3d' : 'dunShow3d') + '</button>' +
